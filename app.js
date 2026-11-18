@@ -33,7 +33,7 @@
   function tplOf(id) { return TEMPLATES[id] || TEMPLATES[defSkin()]; }
   function mkDefaults() {
     var id = defSkin(), t = TEMPLATES[id];
-    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false };
+    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true };
   }
   var DEFAULTS = mkDefaults();
 
@@ -136,7 +136,9 @@
       autoVoice: o.autoVoice !== false,
       photoStyle: ["window", "polaroid", "film", "mix"].indexOf(o.photoStyle) >= 0 ? o.photoStyle : "window",
       bgm: normBgm(o.bgm),
-      puzzle: !!o.puzzle
+      puzzle: !!o.puzzle,
+      cats: o.cats !== false,
+      fireworks: o.fireworks !== false
     };
   }
   function sig(s) { return JSON.stringify(s); }
@@ -160,6 +162,8 @@
   /* ---- 像素装饰 ---- */
   var SPRITES = {
     cat: ["  #         #  ", " ##         ## ", " #o#######o#  ", " #ooooooooo#  ", " #o#oooo#oo#  ", " #ooooooooo#  ", "  #ooo#ooo#   ", "  #ooooooo#   ", " #ooooooooo#  ", " #ooooooooo#  ", " #o##ooo##o#  ", " ### ### ###  "].map(function (r) { return r.slice(0, 14); }),
+    letter: ["#######", "##ooo##", "#o#o#o#", "#ooooo#", "#######"],
+    box: ["  #####  ", "#########", "#ooo#ooo#", "#########", "#ooo#ooo#", "#ooo#ooo#", "#ooo#ooo#", "#########"],
     heart: [" ## ## ", "#ooooo#", "#ooooo#", " #ooo# ", "  #o#  ", "   #   "],
     star: ["   #   ", "   #   ", " ##o## ", "#ooooo#", " ##o## ", "   #   ", "   #   "]
   };
@@ -481,6 +485,126 @@
   function outlineN() { return curSeq.length - (hasFin() ? 1 : 0); }
 
   /* ---- 压轴窗口 ---- */
+  /* ---- 小猫送信：每个窗口由小猫叼着信送来，压轴是一个会抖的礼物盒 ---- */
+  function catOn() { return state.cats && !reduce && !!document.documentElement.animate; }
+  function catDeliver(cx, cy, kind, done) {
+    var vw = stage.clientWidth, vh = stage.clientHeight, u = Math.max(4, Math.min(7, Math.round(vw / 70)));
+    var cw = 14 * u, ch = 12 * u, dir = Math.random() < 0.5 ? 1 : -1;
+    var x0 = dir > 0 ? -cw - 12 : vw + 12, x1 = cx - cw / 2, x2 = dir > 0 ? vw + 12 : -cw - 12;
+    var cat = document.createElement("div"); cat.className = "mailcat"; cat.style.top = Math.max(4, Math.min(vh - ch - 4, cy - ch / 2)) + "px";
+    var flip = document.createElement("div"); if (dir < 0) flip.style.transform = "scaleX(-1)";
+    var bob = document.createElement("div"); bob.className = "mc-bob";
+    bob.innerHTML = sprite("cat", u, "--pet-" + "abc".charAt(Math.floor(Math.random() * 3)));
+    var item = document.createElement("div"); item.className = "mc-item";
+    if (kind === "box") { item.innerHTML = sprite("box", u, "--pet-a"); item.style.left = (cw - 9 * u) / 2 + "px"; item.style.top = (-8 * u) + "px"; }
+    else { item.innerHTML = sprite("letter", u, "--pet-b"); item.style.right = (-5 * u) + "px"; item.style.bottom = (1.5 * u) + "px"; }
+    bob.appendChild(item); flip.appendChild(bob); cat.appendChild(flip); stage.appendChild(cat);
+    function walk(a, b, ms, ease) { return cat.animate([{ transform: "translateX(" + a + "px)" }, { transform: "translateX(" + b + "px)" }], { duration: ms, easing: ease, fill: "forwards" }); }
+    var a1 = walk(x0, x1, Math.max(500, Math.min(1200, Math.abs(x1 - x0) / 0.55)), "ease-out");
+    a1.onfinish = function () {
+      item.style.display = "none";
+      var a2 = walk(x1, x2, Math.max(600, Math.min(1300, Math.abs(x2 - x1) / 0.5)), "ease-in");
+      a2.onfinish = function () { cat.remove(); };
+      if (kind === "box") {
+        var g = document.createElement("div"); g.className = "gift"; g.innerHTML = sprite("box", u + 1, "--pet-a");
+        g.style.left = (cx - 4.5 * (u + 1)) + "px"; g.style.top = (cy - 4 * (u + 1)) + "px"; stage.appendChild(g);
+        setTimeout(function () { g.remove(); done(); }, 800);
+      } else done();
+    };
+  }
+
+  /* ---- 压轴烟花：窗口炸成烟花，再聚成那句话和一颗心 ---- */
+  var fwOn = false;
+  function sfxBoom() {
+    if (!soundOn || !AC) return;
+    var t = AC.currentTime; tone(90, t, 0.4, 0.12, "sine"); tone(1800 + Math.random() * 900, t, 0.1, 0.03, "square");
+  }
+  function fwTargets(text, vw, vh) {
+    var c = document.createElement("canvas"); c.width = vw; c.height = vh; var g = c.getContext("2d");
+    var ch = Array.from(text), mc = Math.max(6, Math.min(12, Math.floor((vw - 40) / 40))), lines = Math.ceil(ch.length / mc), per = Math.ceil(ch.length / lines);
+    var fs = Math.min(64, (vw - 40) / per * 0.95, vh * 0.1);
+    g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle"; g.font = "bold " + fs + 'px "ZCOOL KuaiLe","Noto Sans SC","PingFang SC",sans-serif';
+    for (var l = 0; l < lines; l++) g.fillText(ch.slice(l * per, (l + 1) * per).join(""), vw / 2, vh * 0.62 + (l - (lines - 1) / 2) * fs * 1.3);
+    var data = g.getImageData(0, 0, vw, vh).data, step = Math.max(3, Math.round(fs / 12)), pts = [];
+    for (;;) {
+      pts = [];
+      for (var y = 0; y < vh; y += step) for (var x = 0; x < vw; x += step) if (data[(y * vw + x) * 4 + 3] > 128) pts.push({ x: x, y: y, c: "#fff3d6" });
+      if (pts.length <= 1600) break; step++;
+    }
+    var R = Math.min(vw * 0.32, vh * 0.2), cx = vw / 2, cy = vh * 0.27;
+    [1, 0.62].forEach(function (k, ring) {
+      for (var i = 0; i < 130; i++) {
+        var t = i / 130 * 6.2832;
+        pts.push({ x: cx + 16 * Math.pow(Math.sin(t), 3) * R / 16 * k, y: cy - (13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) * R / 16 * k, c: ring ? "#ffd1dc" : "#ff6f91" });
+      }
+    });
+    return pts;
+  }
+  function fireworks(text, onEnd) {
+    if (fwOn) return; fwOn = true;
+    var vw = window.innerWidth, vh = window.innerHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    var sky = document.createElement("div"); sky.className = "fw-sky";
+    var cv = document.createElement("canvas"); cv.className = "fw-cv"; cv.width = vw * dpr; cv.height = vh * dpr;
+    document.body.appendChild(sky); document.body.appendChild(cv);
+    var x = cv.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0);
+    requestAnimationFrame(function () { sky.classList.add("on"); });
+    var pal = [fxCfg().c, "#ffd36b", "#ffffff", "#ff8fb1", "#ffb3c7", "#9be7ff"], P = [], rockets = [], tms = [], raf = 0, ended = false, gathering = false, T0 = performance.now();
+    function pick() { return pal[(Math.random() * pal.length) | 0]; }
+    function burst(bx, by, n, sp) {
+      var c1 = pick(), c2 = pick();
+      for (var i = 0; i < n; i++) { var a = Math.random() * 6.2832, s = sp * (0.35 + Math.random() * 0.65); P.push({ x: bx, y: by, vx: Math.cos(a) * s, vy: Math.sin(a) * s, c: Math.random() < 0.5 ? c1 : c2, sz: 2 + Math.random() * 2, a: 1, age: 0, life: 90 + Math.random() * 40 }); }
+      sfxBoom();
+    }
+    /* 1) 窗口先炸开 */
+    var r0 = stage.getBoundingClientRect();
+    Array.prototype.slice.call(stage.querySelectorAll(".win:not(.fin)")).forEach(function (w, i) {
+      var r = w.getBoundingClientRect();
+      tms.push(setTimeout(function () { burst(r.left + r.width / 2, r.top + r.height / 2, 22, 3.2); w.classList.add("out"); setTimeout(function () { w.remove(); }, 220); }, i * 90));
+    });
+    /* 2) 再放几发礼花 */
+    for (var k = 0; k < 6; k++) (function (k) {
+      tms.push(setTimeout(function () { rockets.push({ x: vw * (0.15 + Math.random() * 0.7), y: vh + 10, vy: -(9 + Math.random() * 3) * Math.max(0.7, vh / 700), ty: vh * (0.15 + Math.random() * 0.3) }); }, 700 + k * 380));
+    })(k);
+    /* 3) 聚成字和心 */
+    tms.push(setTimeout(function () {
+      var T = fwTargets(text, vw, vh).sort(function () { return Math.random() - 0.5; }), now = performance.now(), live = P.filter(function (p) { return !p.g; });
+      while (live.length < T.length) { var s = live[(Math.random() * live.length) | 0] || { x: vw / 2, y: vh / 2 }; var q = { x: s.x, y: s.y, vx: 0, vy: 0, c: pick(), sz: 2, a: 1, age: 0, life: 99 }; P.push(q); live.push(q); }
+      live.forEach(function (p, i) { var t = T[i % T.length]; p.g = now + Math.random() * 300; p.sx = p.x; p.sy = p.y; p.tx = t.x + (i >= T.length ? Math.random() * 6 - 3 : 0); p.ty = t.y + (i >= T.length ? Math.random() * 6 - 3 : 0); p.c = t.c; p.sz = 2.4; p.a = 1; });
+      gathering = true; sfxFanfare();
+    }, 3600));
+    tms.push(setTimeout(end, 9600));
+    sky.addEventListener("click", end);
+    function end() {
+      if (ended) return; ended = true; tms.forEach(clearTimeout);
+      sky.classList.remove("on"); cv.classList.add("off");
+      setTimeout(function () { cancelAnimationFrame(raf); sky.remove(); cv.remove(); fwOn = false; if (onEnd) onEnd(); }, 900);
+    }
+    function frame() {
+      raf = requestAnimationFrame(frame);
+      var now = performance.now();
+      x.globalCompositeOperation = "destination-out"; x.fillStyle = "rgba(0,0,0,0.22)"; x.fillRect(0, 0, vw, vh);
+      x.globalCompositeOperation = "lighter";
+      rockets = rockets.filter(function (r) {
+        r.y += r.vy; r.vy *= 0.985; x.globalAlpha = 1; x.fillStyle = "#fff"; x.fillRect(r.x - 1.5, r.y, 3, 10);
+        if (r.y <= r.ty) { burst(r.x, r.y, 70, 5); return false; } return true;
+      });
+      for (var i = P.length - 1; i >= 0; i--) {
+        var p = P[i], px, py;
+        if (p.g) {
+          var t = Math.max(0, Math.min(1, (now - p.g) / 1400)), e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+          px = p.sx + (p.tx - p.sx) * e; py = p.sy + (p.ty - p.sy) * e; p.a = t < 1 ? 1 : 0.65 + 0.35 * Math.sin(now / 220 + i);
+        } else {
+          p.vx *= 0.985; p.vy = p.vy * 0.985 + 0.045; p.x += p.vx; p.y += p.vy; p.age++; px = p.x; py = p.y;
+          p.a = Math.max(0, 1 - Math.max(0, p.age - p.life * 0.6) / (p.life * 0.4));
+          if (!gathering && p.age > p.life) { P.splice(i, 1); continue; }
+        }
+        x.globalAlpha = p.a; x.fillStyle = p.c; x.fillRect(px - p.sz / 2, py - p.sz / 2, p.sz, p.sz);
+      }
+      x.globalAlpha = 1;
+    }
+    frame();
+  }
+
   function makeFinale(text, i, vw, vh) {
     var base = Math.min(320, vw * 0.66), fw = curLayout ? curLayout.fw : base, fs = fw / base;
     var el = makeWin(text, i, Math.round(fw), fs);
@@ -493,6 +617,7 @@
       acts.appendChild(yes); acts.appendChild(no); body.appendChild(acts);
       function accept() {
         body.textContent = "我就知道你会答应 💗";
+        if (state.fireworks && !reduce) { fireworks(text); return; }
         var r = el.getBoundingClientRect(); fxBurst(r.left + r.width / 2, r.top + r.height / 2);
         sfxFanfare(); beat();
       }
@@ -766,6 +891,7 @@
     preloadMedia().then(function () { if (tok === runTok) startRun(hintEl); });
   }
   function startRun(hintEl) {
+    var myTok = runTok;
     var vw = stage.clientWidth, vh = stage.clientHeight;
     if (state.pets) spawnPets(vw, vh);
     var seq = curSeq = buildSeq(), n = seq.length, fin = hasFin(), m = outlineN();
@@ -790,13 +916,22 @@
         else placeScatter(el, i, n, vw, vh);
         if (puz && puz.cover[i] != null) zTop++;
         bring(el);
-        if (isFin) sfxFanfare(); else sfxDing(i);
-        if (puz && puz.cover[i] != null) addShard(puz.cover[i], el, vw, vh);
-        if (it.m && it.m.kind === "voice" && state.autoVoice && el._autoplay) el._autoplay();
+        var reveal = function () {
+          if (myTok !== runTok) return;
+          el.style.visibility = ""; el.style.animation = "";
+          if (isFin) sfxFanfare(); else sfxDing(i);
+          if (puz && puz.cover[i] != null) addShard(puz.cover[i], el, vw, vh);
+          if (it.m && it.m.kind === "voice" && state.autoVoice && el._autoplay) el._autoplay();
+        };
+        if (catOn()) { /* 先藏起来，等小猫把信送到再弹出 */
+          el.style.visibility = "hidden"; el.style.animation = "none";
+          catDeliver(el.offsetLeft + el.offsetWidth / 2, el.offsetTop + el.offsetHeight / 2, isFin ? "box" : "letter", reveal);
+        } else reveal();
       }, delay));
     });
-    if (curLayout && !reduce) timers.push(setTimeout(beat, 250 + (n - 1) * state.gap + 1300));
-    var tEnd = reduce ? 0 : 250 + (n - 1) * state.gap;
+    var lead = catOn() ? 1500 : 0;
+    if (curLayout && !reduce) timers.push(setTimeout(beat, 250 + (n - 1) * state.gap + 1300 + lead));
+    var tEnd = reduce ? 0 : 250 + (n - 1) * state.gap + lead;
     var signFn = function () { if (state.from) { hintEl.textContent = "—— " + state.from; hintEl.className = "hint signed"; } else { hintEl.textContent = HINT; hintEl.className = "hint"; } };
     if (puz) {
       puz.onDone = signFn;
@@ -825,7 +960,7 @@
 
   /* ---- 编辑面板：图片和语音列表 ---- */
   var draftMedia = [], rec = null, prev = null, draftBgm = null;
-  var fPuzzle = document.getElementById("fPuzzle"), fPhoto = document.getElementById("fPhoto"), btnAddBgm = document.getElementById("btnAddBgm"), btnBgmPrev = document.getElementById("btnBgmPrev"),
+  var fCats = document.getElementById("fCats"), fFw = document.getElementById("fFw"), fPuzzle = document.getElementById("fPuzzle"), fPhoto = document.getElementById("fPhoto"), btnAddBgm = document.getElementById("btnAddBgm"), btnBgmPrev = document.getElementById("btnBgmPrev"),
       btnBgmDel = document.getElementById("btnBgmDel"), fBgm = document.getElementById("fBgm"), bgmNote = document.getElementById("bgmNote");
   document.getElementById("fPuzzle").addEventListener("change", function () { if (this.checked) document.getElementById("fFin").checked = true; });
   document.getElementById("fFin").addEventListener("change", function () { if (!this.checked) document.getElementById("fPuzzle").checked = false; });
@@ -1040,7 +1175,7 @@
     fLayout.value = state.layout; fTo.value = state.to; fFrom.value = state.from; fEnv.checked = state.envelope; fFin.checked = state.finale; fFx.checked = state.fx; fGap.value = state.gap; fPets.checked = state.pets; gapVal.textContent = (state.gap / 1000).toFixed(2);
     draftSkin = state.skin; renderSkinChips();
     draftMedia = clone(state.media); fAutoVoice.checked = state.autoVoice; renderMediaList(); recLabel();
-    fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm();
+    fCats.checked = state.cats; fFw.checked = state.fireworks; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm();
     modeNote.textContent = "这里的修改保存在你自己的浏览器里；点「分享」会把当前内容存到云端，生成发给 TA 的链接。";
   }
   function closeAll() {
@@ -1072,7 +1207,7 @@
       layout: fLayout.value, to: fTo.value.trim(), from: fFrom.value.trim(), envelope: fEnv.checked, finale: fFin.checked, fx: fFx.checked,
       msgs: lines.length ? lines : DEFAULTS.msgs.slice(),
       media: normMedia(draftMedia.filter(function (m) { return mediaSrc(m); })), autoVoice: fAutoVoice.checked,
-      photoStyle: fPhoto.value, puzzle: fPuzzle.checked,
+      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked,
       bgm: draftBgm && mediaSrc(draftBgm) ? normBgm(draftBgm) : null
     };
     var oldMedia = state.media.concat(state.bgm ? [state.bgm] : []);
@@ -1099,7 +1234,7 @@
   function useTemplate(id) {
     var t = TEMPLATES[id];
     undoState = clone(state);
-    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, bgm: state.bgm ? clone(state.bgm) : null };
+    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, bgm: state.bgm ? clone(state.bgm) : null };
     closeAll();
     persist(next).then(function () { play(); showToast("已套用「" + t.name + "」", true); });
   }

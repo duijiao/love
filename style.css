@@ -26,6 +26,7 @@
   --pet-a: #f3c9a0; --pet-b: #ffffff; --pet-c: #a9a7b4; --pet-line: #2f2a3f;
   --shadow: 0 10px 28px rgba(110, 90, 160, .22);
   --font-ui: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-hand: "Ma Shan Zheng", "ZCOOL KuaiLe", "Kaiti SC", STKaiti, KaiTi, cursive;
   --font-win: "ZCOOL KuaiLe", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 @supports (color: oklch(0.5 0.1 100)) {
@@ -66,6 +67,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   background: linear-gradient(160deg, var(--bg-a) 0%, var(--bg-b) 55%, var(--bg-c) 100%);
@@ -208,10 +210,79 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .hint.signed { font: 18px var(--font-win); color: var(--ink); animation: petIn .6s ease-out both; }
 .qrbox { display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .qrbox img { width: min(100%, 260px); aspect-ratio: 1; background: #fff; border-radius: 12px; border: 1px solid var(--sheet-line); }
+/* 图片窗口 / 语音窗口 */
+.win .body.media { padding: .6em .6em .75em; }
+.mfig { margin: 0; }
+.mimg { display: block; width: 100%; border-radius: .6em; object-fit: cover; background: var(--field); cursor: zoom-in; -webkit-user-drag: none; }
+.win .cap { margin: .55em .25em 0; font-size: .8em; line-height: 1.4; }
+.voice { display: flex; align-items: center; gap: .6em; padding: .35em .25em; }
+.vplay { flex: none; width: max(2.4em, 36px); height: max(2.4em, 36px); border: 0; border-radius: 50%; background: var(--accent); color: var(--accent-ink); font: 600 .8em var(--font-ui); display: grid; place-items: center; cursor: pointer; padding: 0; }
+.vplay.nudge { animation: ring 1.4s ease-out infinite; }
+@keyframes ring { 0% { box-shadow: 0 0 0 0 var(--accent) } 80%, 100% { box-shadow: 0 0 0 .7em transparent } }
+.vbars { flex: 1; min-width: 0; height: 2.2em; display: flex; align-items: center; gap: .14em; }
+.vbars i { flex: 1; max-width: .34em; min-width: 2px; height: calc(var(--bh, .6) * 100%); border-radius: 99px; background: var(--ink-soft); opacity: .4; transform-origin: center; }
+.vbars i.on { background: var(--accent); opacity: 1; }
+.voice.playing .vbars i { animation: vb .9s ease-in-out infinite; animation-delay: calc(var(--d, 0) * 1ms); }
+@keyframes vb { 50% { transform: scaleY(.55) } }
+.vdur { flex: none; font-size: .72em; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.lb { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center; padding: 16px; background: rgba(10, 8, 20, .85); cursor: zoom-out; }
+.lb img { max-width: 100%; max-height: 100%; border-radius: 12px; }
+/* 编辑面板里的图片和语音列表 */
+.mediabox { display: flex; flex-direction: column; gap: 10px; }
+.mhead { display: flex; flex-wrap: wrap; gap: 8px; }
+.mbtn { padding: 10px 16px; min-height: 44px; border-radius: 999px; border: 1px solid var(--sheet-line); background: var(--field); color: var(--ink); font: 600 14px var(--font-ui); cursor: pointer; }
+.mbtn:disabled { opacity: .45; cursor: default; }
+.mbtn.rec { background: var(--dot-r); color: #fff; border-color: transparent; font-variant-numeric: tabular-nums; }
+.mlist { display: flex; flex-direction: column; gap: 8px; }
+.mlist:empty { display: none; }
+.mrow { display: flex; align-items: center; gap: 10px; padding: 10px; min-width: 0; border-radius: 12px; border: 1px solid var(--sheet-line); background: var(--field); }
+.mthumb { flex: none; width: 56px; height: 56px; border-radius: 10px; object-fit: cover; display: grid; place-items: center; background: var(--sheet); color: var(--ink-soft); font-size: 13px; text-align: center; }
+.minfo { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.minfo input, .minfo select { width: 100%; min-width: 0; font: 14px var(--font-ui); color: var(--ink); background: var(--sheet); border: 1px solid var(--sheet-line); border-radius: 8px; padding: 7px 10px; }
+.mact { flex: none; display: flex; flex-direction: column; gap: 6px; }
+.ibtn { width: 44px; height: 44px; border-radius: 10px; border: 1px solid var(--sheet-line); background: var(--sheet); color: var(--ink); font: 600 13px var(--font-ui); cursor: pointer; padding: 0; }
 @media (prefers-reduced-motion: reduce) {
+  .vplay.nudge, .voice.playing .vbars i { animation: none; }
   #stage.beat { animation: none; }
   .win, .pet, .sheet { animation: none !important; opacity: 1; }
 }
 /* 分享链接打开（?s= / ?t= / #z…）：只留弹窗本身，隐藏所有按钮、抽屉和提示条 */
 .viewer .fabs, .viewer .scrim, .viewer .sheet, .viewer .toast { display: none !important; }
 .viewer .hint { padding-right: 16px; }
+
+/* ---- 拍立得 / 胶片 ---- */
+.win.photo { overflow: visible; border-radius: 0; box-shadow: none; cursor: grab; rotate: var(--rot, 0deg); }
+.photo .mfig { margin: 0; }
+.photo .mimg { border-radius: 0; cursor: zoom-in; }
+.photo .pcap { margin: 0; font-family: var(--font-hand); line-height: 1.3; overflow-wrap: anywhere; }
+.photo .pclose { position: absolute; top: -.7em; right: -.7em; z-index: 3; width: 1.9em; height: 1.9em; padding: 0; border: 0; border-radius: 50%;
+  background: var(--dot-r); color: #fff; font: 700 1.1em/1 var(--font-ui); cursor: pointer; box-shadow: 0 2px 6px rgba(0, 0, 0, .25); }
+.photo .pclose::after { content: ''; position: absolute; inset: -.6em; }
+.polaroid { background: #fffdf8; padding: .8em .8em 0; box-shadow: 0 .5em 1.4em rgba(40, 30, 60, .3), 0 .1em .25em rgba(0, 0, 0, .18); }
+.polaroid::before { content: ''; position: absolute; left: 50%; top: -.9em; width: 5em; height: 1.6em; margin-left: -2.5em; z-index: 2; pointer-events: none;
+  background: rgba(255, 226, 160, .72); transform: rotate(-3deg); box-shadow: 0 1px 2px rgba(0, 0, 0, .12); }
+.polaroid .mimg { filter: saturate(.92) contrast(1.03) sepia(.08); }
+.polaroid .pcap { color: #3b3340; font-size: 1.5em; min-height: 2.4em; padding: .5em .2em .35em; display: flex; align-items: center; justify-content: center; text-align: center; }
+.film { background: #1c1a1f; padding: 1.5em 1.9em .5em; border-radius: .25em; box-shadow: 0 .5em 1.4em rgba(20, 10, 30, .45); }
+.film::before, .film::after { content: ''; position: absolute; top: .5em; bottom: .5em; width: .7em; border-radius: .15em; opacity: .9;
+  background: repeating-linear-gradient(to bottom, #f3efe6 0 .55em, transparent .55em 1.1em); }
+.film::before { left: .6em; } .film::after { right: .6em; }
+.film .fno { position: absolute; top: .45em; left: 1.9em; right: 1.9em; display: flex; justify-content: space-between; font: 600 .7em/1 var(--font-ui); letter-spacing: .12em; color: #ff9f43; }
+.film .mimg { border-radius: .15em; filter: sepia(.28) saturate(1.15) contrast(1.05); }
+.film .pcap { color: #ffd58a; font-size: 1.3em; min-height: 1.7em; padding: .45em .1em .3em; }
+.viewer.has-bgm .fabs { display: flex !important; }
+.viewer.has-bgm .fabs > :not(#btnSound) { display: none !important; }
+
+/* ---- 拼图告白 ---- */
+.shard { position: absolute; z-index: 6; font: var(--fs, 18px)/1.3 var(--font-win); color: var(--ink); white-space: nowrap; padding: .75em 1.05em; --bg: var(--sheet);
+  cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; rotate: var(--rot, 0deg); transition: rotate .25s;
+  animation: pop .38s cubic-bezier(.2, 1.4, .4, 1) both; filter: drop-shadow(0 .15em .35em rgba(40, 30, 60, .3)); }
+.shard[data-c="1"] { --bg: var(--w1-body) } .shard[data-c="2"] { --bg: var(--w2-body) } .shard[data-c="3"] { --bg: var(--w3-body) }
+.shard[data-c="4"] { --bg: var(--w4-body) } .shard[data-c="5"] { --bg: var(--w5-body) } .shard[data-c="6"] { --bg: var(--w6-body) }
+.shard::before { content: ''; position: absolute; inset: 0; z-index: -1; background: var(--bg); border-radius: .45em; }
+.shard.nl::before { -webkit-mask: radial-gradient(circle .45em at 0 50%, #0000 97%, #000 100%); mask: radial-gradient(circle .45em at 0 50%, #0000 97%, #000 100%); }
+.shard.nr::after { content: ''; position: absolute; right: -.4em; top: 50%; width: .8em; height: .8em; margin-top: -.4em; border-radius: 50%; background: var(--bg); z-index: -1; }
+.shard.peek { animation: shardNudge 2.6s ease-in-out infinite; }
+@keyframes shardNudge { 0%, 80%, 100% { translate: 0 0; } 88% { translate: 0 -3px; } 94% { translate: 0 3px; } }
+.shard.done { animation: shardGlow .9s ease-in-out both; pointer-events: none; }
+@keyframes shardGlow { 50% { filter: drop-shadow(0 0 .9em #ffb3c7) brightness(1.08); } }

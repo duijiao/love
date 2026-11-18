@@ -3,13 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>I love you</title>
+<title>冬日弹窗</title>
 <script>
 /* 分享链接（?s= / ?t= / #z…）先给 <html> 打上 viewer 标记，按钮从第一帧起就是隐藏的 */
 (function(){var q=location.search,h=location.hash;if(/[?&](s|t)=/.test(q)||/^#[zp][A-Za-z0-9_-]{8,}/.test(h))document.documentElement.classList.add("viewer");})();
 </script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600&family=ZCOOL+KuaiLe&display=swap">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600&family=ZCOOL+KuaiLe&family=Ma+Shan+Zheng&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -43,6 +43,31 @@
       <label for="fMsgs">弹窗文字（一行一个窗口，最多 40 个）</label>
       <textarea id="fMsgs"></textarea>
     </div>
+    <div class="mediabox">
+      <div class="lbl">图片和语音窗口（可选，最多 8 个）</div>
+      <div class="mhead">
+        <button class="mbtn" id="btnAddImg" type="button">添加图片</button>
+        <button class="mbtn" id="btnRec" type="button">录一段语音</button>
+        <button class="mbtn" id="btnAddAud" type="button">上传音频</button>
+      </div>
+      <input id="fImg" type="file" accept="image/*" multiple hidden>
+      <input id="fAud" type="file" accept="audio/*" hidden>
+      <div class="mlist" id="mediaList"></div>
+      <label class="check"><input id="fAutoVoice" type="checkbox"> 语音窗口弹出时自动播放</label>
+      <div class="field"><label for="fPhoto">图片样式</label>
+        <select id="fPhoto"><option value="window">普通窗口</option><option value="polaroid">拍立得（白边 + 手写字）</option><option value="film">胶片（底片边框）</option><option value="mix">拍立得和胶片交替</option></select></div>
+      <p class="small">图片会压缩并去掉拍摄位置等信息。点「分享」时它们才会上传到云端，拿到链接的人都能看到。</p>
+    </div>
+    <div class="mediabox">
+      <div class="lbl">背景音乐（可选，不上传就用内置音乐）</div>
+      <div class="mhead">
+        <button class="mbtn" id="btnAddBgm" type="button">上传一首歌</button>
+        <button class="mbtn" id="btnBgmPrev" type="button" aria-label="试听" hidden>▶</button>
+        <button class="mbtn" id="btnBgmDel" type="button" hidden>改用内置音乐</button>
+      </div>
+      <input id="fBgm" type="file" accept="audio/*" hidden>
+      <p class="small" id="bgmNote"></p>
+    </div>
     <div>
       <div class="lbl" style="margin-bottom: 8px">配色</div>
       <div class="chips" id="skinChips"></div>
@@ -62,6 +87,7 @@
     <div class="row"><div class="field"><label for="fTo">收件人（信封上写“给 ××”）</label><input id="fTo" type="text" maxlength="12"></div><div class="field"><label for="fFrom">落款（信封和结尾署名）</label><input id="fFrom" type="text" maxlength="12"></div></div>
     <label class="check"><input id="fEnv" type="checkbox"> 信封开场（点开才播放弹窗）</label>
     <label class="check"><input id="fFin" type="checkbox"> 最后一句做成压轴窗口（表白模板带「愿意 / 再想想」）</label>
+    <label class="check"><input id="fPuzzle" type="checkbox"> 拼图告白：压轴那句话拆成碎片，藏在照片后面，拖到一起才能拼完整（需要已开压轴窗口，建议配 3 张以上照片）</label>
     <label class="check"><input id="fFx" type="checkbox"> 飘落特效</label>
     <label class="check"><input id="fPets" type="checkbox"> 显示像素小猫和装饰</label>
     <p class="small mode" id="modeNote"></p>

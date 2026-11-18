@@ -3,11 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>冬日弹窗</title>
+<title>I love you</title>
 <script>
 /* 分享链接（?s= / ?t= / #z…）先给 <html> 打上 viewer 标记，按钮从第一帧起就是隐藏的 */
-(function(){var q=location.search,h=location.hash;if(/[?&](s|t)=/.test(q)||/^\?[A-Za-z0-9]{6,16}$/.test(q)||/^#[zp][A-Za-z0-9_-]{8,}/.test(h))document.documentElement.classList.add("viewer");})();
+(function(){var q=location.search,h=location.hash;if(/[?&](s|t)=/.test(q)||/^#[zp][A-Za-z0-9_-]{8,}/.test(h))document.documentElement.classList.add("viewer");})();
 </script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600&family=ZCOOL+KuaiLe&display=swap">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -90,7 +92,6 @@
       <div class="field"><label for="sFrom">落款（你的名字）</label><input id="sFrom" type="text" maxlength="12" placeholder="比如：小红"></div>
     </div>
     <label class="check"><input id="sEnv" type="checkbox" checked> 信封开场（点开才播放，同时开启音乐）</label>
-    <div class="field"><label for="sAt">定时开启（可选）：没到时间，TA 只能看到倒计时</label><input id="sAt" type="datetime-local"></div>
     <div class="qrbox"><img id="qrImg" alt="分享二维码" hidden><p class="small" id="qrNote"></p></div>
     <div class="field"><label for="sLink">专属链接</label><input id="sLink" type="text" readonly></div>
     <div class="actions">
@@ -105,6 +106,7 @@
 <div class="toast" id="toast" hidden role="status"><span id="toastText"></span><button type="button" id="toastUndo">撤销</button></div>
 
 <script src="config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';document.head.appendChild(s)"></script>
 <script src="api.js"></script>
 <script src="app.js"></script>
 </body>

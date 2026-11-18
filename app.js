@@ -33,7 +33,7 @@
   function tplOf(id) { return TEMPLATES[id] || TEMPLATES[defSkin()]; }
   function mkDefaults() {
     var id = defSkin(), t = TEMPLATES[id];
-    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", at: 0, envelope: false, finale: false, fx: true, msgs: t.msgs.slice() };
+    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice() };
   }
   var DEFAULTS = mkDefaults();
 
@@ -45,9 +45,6 @@
   var local = null, viewing = root.classList.contains("viewer");
   var state = clone(DEFAULTS);
 
-  function lsGet(k, d) { try { return JSON.parse(localStorage.getItem(k)) || d; } catch (e) { return d; } }
-  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
-  var MY = "winter-my-shares-v1", SEEN = "winter-replies-seen-v1", SC = "winter-share-cache-v1";
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   function norm(o) {
     if (!o || !Array.isArray(o.msgs) || !o.msgs.length) return null;
@@ -62,7 +59,6 @@
       envelope: o.envelope === undefined ? !!tplOf(o.skin).envelope : !!o.envelope,
       finale: o.finale === undefined ? !!tplOf(o.skin).finale : !!o.finale,
       fx: o.fx !== false,
-      at: +o.at > 0 ? +o.at : 0,
       layout: ["auto", "heart", "scatter"].indexOf(o.layout) >= 0 ? o.layout : "auto",
       msgs: o.msgs.map(String).slice(0, 40)
     };
@@ -91,18 +87,14 @@
     heart: [" ## ## ", "#ooooo#", "#ooooo#", " #ooo# ", "  #o#  ", "   #   "],
     star: ["   #   ", "   #   ", " ##o## ", "#ooooo#", " ##o## ", "   #   ", "   #   "]
   };
-  var spriteCache = {};
   function sprite(name, px, fillVar) {
-    var cs = getComputedStyle(root), fill = cs.getPropertyValue(fillVar).trim() || "#fff", line = cs.getPropertyValue("--pet-line").trim() || "#2f2a3f";
-    var k = name + px + fill + line; if (spriteCache[k]) return spriteCache[k];
-    var rows = SPRITES[name], w = rows[0].length, h = rows.length, c = document.createElement("canvas");
-    c.width = w * px; c.height = h * px;
-    var g = c.getContext("2d");
+    var rows = SPRITES[name], w = rows[0].length, h = rows.length, s = "";
     for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
-      var ch = rows[y].charAt(x); if (!ch || ch === " ") continue;
-      g.fillStyle = ch === "#" ? line : fill; g.fillRect(x * px, y * px, px, px);
+      var c = rows[y].charAt(x);
+      if (c === "#") s += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="var(--pet-line)"/>';
+      else if (c === "o") s += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="var(' + fillVar + ')"/>';
     }
-    return (spriteCache[k] = '<img alt="" width="' + w * px + '" height="' + h * px + '" src="' + c.toDataURL() + '">');
+    return '<svg width="' + w * px + '" height="' + h * px + '" viewBox="0 0 ' + w + " " + h + '" aria-hidden="true">' + s + "</svg>";
   }
   function addPet(name, px, fillVar, left, top, delay) {
     var d = document.createElement("div");
@@ -273,7 +265,7 @@
       function accept() {
         body.textContent = "我就知道你会答应 💗";
         var r = el.getBoundingClientRect(); fxBurst(r.left + r.width / 2, r.top + r.height / 2);
-        sfxFanfare(); beat(); report("yes");
+        sfxFanfare(); beat();
       }
       function dodge(e) {
         if (giveUp) return;
@@ -343,17 +335,8 @@
   function fxCfg() { var t = tplOf(state.skin); return { g: t.fx_glyphs, c: t.fx_color }; }
   var fxc = document.getElementById("fx"), fxx = fxc.getContext("2d"), fxP = [], fxRaf = 0, fxW = 0, fxH = 0;
   function fxSize() {
-    var d = Math.min(2, window.devicePixelRatio || 1); fxW = window.innerWidth; fxH = window.innerHeight;
+    var d = window.devicePixelRatio || 1; fxW = window.innerWidth; fxH = window.innerHeight;
     fxc.width = fxW * d; fxc.height = fxH * d; fxx.setTransform(d, 0, 0, d, 0, 0);
-  }
-  var glyphCache = {};
-  function glyphImg(g, sz, color) {
-    sz = Math.max(8, Math.round(sz / 4) * 4);
-    var k = g + sz + color; if (glyphCache[k]) return glyphCache[k];
-    var d = Math.min(2, window.devicePixelRatio || 1), s = Math.ceil(sz * 1.5), c = document.createElement("canvas"), x;
-    c.width = c.height = Math.round(s * d); x = c.getContext("2d"); x.scale(d, d);
-    x.font = sz + "px sans-serif"; x.textAlign = "center"; x.textBaseline = "middle"; x.fillStyle = color; x.fillText(g, s / 2, s / 2);
-    c.w = s; return (glyphCache[k] = c);
   }
   function fxNew(cfg, init) {
     return { x: Math.random() * fxW, y: init ? Math.random() * fxH : -30, g: cfg.g[(Math.random() * cfg.g.length) | 0],
@@ -361,7 +344,7 @@
   }
   function fxBurst(x, y) {
     if (reduce) return;
-    for (var i = 0; i < 28; i++) fxP.push({ b: 1, x: x, y: y, g: "♥", sz: 16 + Math.random() * 16, vx: (Math.random() - 0.5) * 10, vy: -3 - Math.random() * 7, a: 1, life: 90 });
+    for (var i = 0; i < 36; i++) fxP.push({ b: 1, x: x, y: y, g: "♥", sz: 16 + Math.random() * 16, vx: (Math.random() - 0.5) * 10, vy: -3 - Math.random() * 7, a: 1, life: 90 });
     if (!fxRaf) fxLoop();
   }
   function fxLoop() {
@@ -371,7 +354,7 @@
       var p = fxP[i];
       if (p.b) { p.x += p.vx; p.y += p.vy; p.vy += 0.17; p.vx *= 0.99; p.life--; p.a = Math.min(1, p.life / 30); if (p.life <= 0) { fxP.splice(i, 1); continue; } }
       else { p.y += p.vy; p.x += Math.sin(t * p.sw + p.ph) * 0.6; if (p.y > fxH + 30) fxP[i] = fxNew(cfg, false); }
-      var im = glyphImg(p.g, p.sz, cfg.c); fxx.globalAlpha = p.a; fxx.drawImage(im, p.x - im.w / 2, p.y - im.w / 2, im.w, im.w);
+      fxx.globalAlpha = p.a; fxx.font = p.sz + "px sans-serif"; fxx.fillText(p.g, p.x, p.y);
     }
     fxx.globalAlpha = 1;
     fxRaf = fxP.length ? requestAnimationFrame(fxLoop) : 0;
@@ -379,7 +362,7 @@
   function fxStart() {
     cancelAnimationFrame(fxRaf); fxRaf = 0; fxP = []; fxSize(); fxx.clearRect(0, 0, fxW, fxH);
     if (!state.fx || reduce) return;
-    var cfg = fxCfg(), n = Math.min(36, Math.round(fxW / 16));
+    var cfg = fxCfg(), n = Math.min(60, Math.round(fxW / 14));
     for (var i = 0; i < n; i++) fxP.push(fxNew(cfg, true));
     fxLoop();
   }
@@ -395,15 +378,9 @@
     o.querySelector(".env-to").textContent = state.to ? "给 " + state.to : "给你的一封信";
     o.querySelector(".env-from").textContent = state.from ? "来自 " + state.from : "";
     document.body.appendChild(o);
-    var done = false, btn = o.querySelector(".env-go-btn"), lock = viewing && state.at > Date.now(), iv = 0;
-    function fmt(ms) { var s = Math.ceil(ms / 1000), d = (s / 86400) | 0, h = ((s % 86400) / 3600) | 0, m = ((s % 3600) / 60) | 0; return (d ? d + "天 " : "") + (d || h ? h + "时 " : "") + m + "分 " + (s % 60) + "秒"; }
-    function tick() {
-      var left = state.at - Date.now();
-      if (left <= 0) { lock = false; clearInterval(iv); btn.textContent = "点开看看"; } else btn.textContent = "还有 " + fmt(left) + " 才能拆开";
-    }
-    if (lock) { tick(); iv = setInterval(tick, 1000); }
+    var done = false;
     o.addEventListener("click", function () {
-      if (done || lock) return; done = true;
+      if (done) return; done = true;
       if (!soundOn) setSound(true);
       sfxDing(2);
       o.classList.add("open");
@@ -415,17 +392,11 @@
   function play() {
     played = true;
     timers.forEach(clearTimeout); timers = [];
-    if ((state.envelope || (viewing && state.at > Date.now())) && !opened) { showEnvelope(); return; }
+    if (state.envelope && !opened) { showEnvelope(); return; }
     var old = document.querySelector(".env"); if (old) old.remove();
     run();
   }
-  function report(kind) {
-    if (!viewing || !sid || !API.enabled) return;
-    var k = "winter-rep-" + sid + kind; if (lsGet(k, 0)) return; lsSet(k, 1);
-    API.reply(sid, kind).catch(function () { lsSet(k, 0); });
-  }
   function run() {
-    report("open");
     stage.classList.remove("beat");
     stage.innerHTML = "";
     var hintEl = document.getElementById("hint");
@@ -548,10 +519,10 @@
   /* ---- 模板与撤销 ---- */
   var toastEl = document.getElementById("toast"), toastText = document.getElementById("toastText"),
       toastUndo = document.getElementById("toastUndo"), toastTimer = null, undoState = null;
-  function showToast(msg, withUndo, ms) {
+  function showToast(msg, withUndo) {
     toastText.textContent = msg; toastUndo.hidden = !withUndo; toastEl.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { toastEl.hidden = true; undoState = null; }, ms || 6000);
+    toastTimer = setTimeout(function () { toastEl.hidden = true; undoState = null; }, 6000);
   }
   function useTemplate(id) {
     var t = TEMPLATES[id];
@@ -568,11 +539,11 @@
 
 
   /* ---- 分享：内容编码进链接（#z…），二维码用 qrcode-generator ---- */
-  var SHARE_BASE = ((window.APP_CONFIG && window.APP_CONFIG.SHARE_BASE) || location.href.split(/[?#]/)[0]).replace(/index\.html$/, "");
+  var SHARE_BASE = (window.APP_CONFIG && window.APP_CONFIG.SHARE_BASE) || location.href.split(/[?#]/)[0];
   var sTo = document.getElementById("sTo"), sFrom = document.getElementById("sFrom"), sLink = document.getElementById("sLink"),
       qrImg = document.getElementById("qrImg"), qrNote = document.getElementById("qrNote"),
       btnCopy = document.getElementById("btnCopy"), btnNative = document.getElementById("btnNative"),
-      btnShare = document.getElementById("btnShare"), sEnv = document.getElementById("sEnv"), sAt = document.getElementById("sAt"), shTimer = null, shSeq = 0, shareCache = {};
+      btnShare = document.getElementById("btnShare"), sEnv = document.getElementById("sEnv"), shTimer = null, shSeq = 0, shareCache = {};
   function b64u(bytes) {
     var s = ""; for (var i = 0; i < bytes.length; i++) s += String.fromCharCode(bytes[i]);
     return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -618,55 +589,24 @@
     for (var r = 0; r < n; r++) for (var k = 0; k < n; k++) if (q.isDark(r, k)) g.fillRect((k + 4) * px, (r + 4) * px, px, px);
     return c.toDataURL("image/png");
   }
-  var qrLoading = null;
-  function loadQR() {
-    if (window.qrcode) return Promise.resolve();
-    if (qrLoading) return qrLoading;
-    var urls = ["https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js", "https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"];
-    qrLoading = urls.reduce(function (p, u) {
-      return p.then(function () {
-        if (window.qrcode) return;
-        return new Promise(function (res) { var s = document.createElement("script"); s.src = u; s.onload = s.onerror = res; document.head.appendChild(s); });
-      });
-    }, Promise.resolve()).then(function () { qrLoading = null; });
-    return qrLoading;
-  }
   function showShare(url) {
-    sLink.value = url; qrImg.hidden = true; qrNote.textContent = "二维码生成中…";
-    loadQR().then(function () {
-      if (sLink.value !== url) return;
-      var img = makeQR(url);
-      if (img) { qrImg.src = img; qrImg.hidden = false; qrNote.textContent = "手机相机扫一扫，或长按保存这张图发给 TA"; }
-      else { qrImg.hidden = true; qrNote.textContent = window.qrcode ? "文字有点多，二维码装不下，请用下面的链接（或删掉几条再试）" : "二维码暂时生成不了，先用下面的链接"; }
-    });
+    sLink.value = url;
+    var img = makeQR(url);
+    if (img) { qrImg.src = img; qrImg.hidden = false; qrNote.textContent = "手机相机扫一扫，或长按保存这张图发给 TA"; }
+    else { qrImg.hidden = true; qrNote.textContent = window.qrcode ? "文字有点多，二维码装不下，请用下面的链接（或删掉几条再试）" : "二维码暂时生成不了，先用下面的链接"; }
   }
   /* 优先存到 Supabase 拿短链接；没配置或网络失败时，退回把内容编码进链接 */
   function shareUrl(o) {
-    var key = h53(sig(o)), cache = lsGet(SC, {});
+    var key = sig(o);
     if (shareCache[key]) return Promise.resolve(shareCache[key]);
-    if (cache[key]) return Promise.resolve((shareCache[key] = SHARE_BASE + "?" + cache[key]));
     var p = API.enabled
-      ? API.saveShare(o).then(function (id) {
-          var u = SHARE_BASE + "?" + id; shareCache[key] = u;
-          var ks = Object.keys(cache); if (ks.length > 40) delete cache[ks[0]];
-          cache[key] = id; lsSet(SC, cache);
-          var my = lsGet(MY, []); my.push({ id: id, to: o.to }); lsSet(MY, my.slice(-30));
-          return u;
-        })
+      ? API.saveShare(o).then(function (id) { var u = SHARE_BASE + "?s=" + id; shareCache[key] = u; return u; })
       : Promise.reject();
     return p.catch(function () { return encodeShare(o).then(function (code) { return SHARE_BASE + "#" + code; }); });
-  }
-  function h53(s) {
-    var a = 0xdeadbeef, b = 0x41c6ce57, i, c;
-    for (i = 0; i < s.length; i++) { c = s.charCodeAt(i); a = Math.imul(a ^ c, 2654435761); b = Math.imul(b ^ c, 1597334677); }
-    a = Math.imul(a ^ (a >>> 16), 2246822507) ^ Math.imul(b ^ (b >>> 13), 3266489909);
-    b = Math.imul(b ^ (b >>> 16), 2246822507) ^ Math.imul(a ^ (a >>> 13), 3266489909);
-    return (4294967296 * (2097151 & b) + (a >>> 0)).toString(36);
   }
   function buildShare() {
     var seq = ++shSeq, o = clone(state);
     o.to = sTo.value.trim().slice(0, 12); o.from = sFrom.value.trim().slice(0, 12); o.envelope = sEnv.checked;
-    o.at = sAt.value ? (new Date(sAt.value).getTime() || 0) : 0; if (o.at && o.at <= Date.now()) o.at = 0;
     sLink.value = "生成中…";
     shareUrl(o).then(function (u) { if (seq === shSeq) showShare(u); });
   }
@@ -675,7 +615,7 @@
     if (sig(n) !== sig(state)) persist(n);
   }
   function openShare() {
-    closeAll(); sTo.value = state.to; sFrom.value = state.from; sEnv.checked = true; sAt.value = "";
+    closeAll(); sTo.value = state.to; sFrom.value = state.from; sEnv.checked = true;
     btnNative.hidden = !navigator.share;
     sheetShare.hidden = false; scrim.hidden = false; buildShare();
   }
@@ -693,7 +633,7 @@
     el.addEventListener("input", function () { clearTimeout(shTimer); shTimer = setTimeout(buildShare, 700); });
     el.addEventListener("change", saveNames);
   });
-  sEnv.addEventListener("change", buildShare); sAt.addEventListener("change", buildShare);
+  sEnv.addEventListener("change", buildShare);
   btnShare.addEventListener("click", openShare);
   btnCopy.addEventListener("click", copyLink);
   btnNative.addEventListener("click", function () {
@@ -703,7 +643,7 @@
   document.getElementById("btnShClose").addEventListener("click", function () { saveNames(); closeAll(); });
 
   /* ---- 启动：模板和分享内容都从 Supabase 读取，读不到就用内置/本机的 ---- */
-  var qs = new URLSearchParams(location.search), rawQ = location.search.slice(1), sid = qs.get("s") || (/^[A-Za-z0-9]{6,16}$/.test(rawQ) ? rawQ : null), tid = qs.get("t"),
+  var qs = new URLSearchParams(location.search), sid = qs.get("s"), tid = qs.get("t"),
       hm = /^#([zp][A-Za-z0-9_-]{8,})$/.exec(location.hash || "");
   var sharePromise = sid ? (API.enabled ? API.getShare(sid) : Promise.reject()) : null;
   if (sharePromise) sharePromise.catch(function () {});
@@ -725,29 +665,13 @@
       if (setTemplates(rows)) { DEFAULTS = mkDefaults(); try { localStorage.setItem(TKEY, JSON.stringify(rows)); } catch (e) {} }
     }).catch(function () {});
   }
-  function checkReplies() {
-    var mine = lsGet(MY, []); if (!API.enabled || !mine.length) return;
-    API.getReplies(mine.map(function (m) { return m.id; })).then(function (rows) {
-      var seen = lsGet(SEEN, {}), out = [];
-      mine.forEach(function (m) {
-        var rs = rows.filter(function (r) { return r.share_id === m.id; }), yes = rs.some(function (r) { return r.kind === "yes"; });
-        var lvl = yes ? 2 : rs.length ? 1 : 0, who = m.to || "TA";
-        if (lvl > (seen[m.id] || 0)) { out.push(yes ? who + " 点了「愿意」💗" : who + " 拆开了你的信 💌"); seen[m.id] = lvl; }
-      });
-      if (out.length) { lsSet(SEEN, seen); showToast(out.join("；"), false, 9000); }
-    }).catch(function () {});
-  }
   function init() {
     local = readLocal();
-    if (sharePromise) sharePromise.then(function (d) {
-      function go() { var s = norm(d); if (s) startViewer(s); else badLink(); }
-      if (d && d.skin && !TEMPLATES[d.skin]) Promise.race([refreshTemplates(), new Promise(function (r) { setTimeout(r, 2500); })]).then(go);
-      else { go(); refreshTemplates(); }
-    }, badLink);
+    if (sharePromise) sharePromise.then(function (d) { var s = norm(d); if (s) startViewer(s); else badLink(); }, badLink);
     else if (hm) decodeShare(hm[1]).then(function (s) { if (s) startViewer(s); else badLink(); });
     else if (tid && TEMPLATES[tid]) startViewer(fromTemplate(tid));
-    else { setViewing(false); state = local || clone(DEFAULTS); boot(); setTimeout(checkReplies, 1500); }
+    else { setViewing(false); state = local || clone(DEFAULTS); boot(); }
   }
-  if (viewing && tid && !TEMPLATES[tid]) Promise.race([refreshTemplates(), new Promise(function (r) { setTimeout(r, 2500); })]).then(init);
-  else { init(); if (!sid) refreshTemplates(); }
+  if (viewing) Promise.race([refreshTemplates(), new Promise(function (r) { setTimeout(r, 3000); })]).then(init);
+  else { init(); refreshTemplates(); }
 })();

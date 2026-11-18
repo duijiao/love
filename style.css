@@ -24,9 +24,9 @@
   --fab-ink: #ffffff;
   --dot-r: #ee5b52; --dot-y: #f2b33a; --dot-g: #3fc04f;
   --pet-a: #f3c9a0; --pet-b: #ffffff; --pet-c: #a9a7b4; --pet-line: #2f2a3f;
-  --shadow: 0 6px 16px rgba(110, 90, 160, .2);
-  --font-ui: "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
-  --font-win: "HarmonyOS Sans SC", "MiSans", "PingFang SC", "Noto Sans SC", "Microsoft YaHei", sans-serif;
+  --shadow: 0 10px 28px rgba(110, 90, 160, .22);
+  --font-ui: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-win: "ZCOOL KuaiLe", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 @supports (color: oklch(0.5 0.1 100)) {
   :root {
@@ -66,7 +66,6 @@
 }
 
 * { box-sizing: border-box; }
-[hidden] { display: none !important; }
 html, body { height: 100%; }
 body {
   background: linear-gradient(160deg, var(--bg-a) 0%, var(--bg-b) 55%, var(--bg-c) 100%);
@@ -77,16 +76,16 @@ body {
 }
 #stage { position: fixed; inset: 0; overflow: hidden; }
 .pet { position: absolute; z-index: 1; pointer-events: none; opacity: 0; animation: petIn .6s ease-out forwards; }
-.pet img { display: block; image-rendering: pixelated; }
+.pet svg { display: block; shape-rendering: crispEdges; }
 @keyframes petIn { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: none } }
 
 .win {
-  position: absolute; z-index: 5; border-radius: 1em; font-size: calc(14px * var(--s, 1)); contain: layout style;
+  position: absolute; z-index: 5; border-radius: 1em; overflow: hidden; font-size: calc(14px * var(--s, 1));
   box-shadow: var(--shadow); color: var(--ink);
   animation: pop .38s cubic-bezier(.2, 1.4, .4, 1) both;
   touch-action: none; user-select: none; -webkit-user-select: none;
 }
-.win .bar { border-radius: 1em 1em 0 0; display: flex; align-items: center; gap: .57em; padding: .72em 1em; cursor: grab; }
+.win .bar { display: flex; align-items: center; gap: .57em; padding: .72em 1em; cursor: grab; }
 .win .dots { display: flex; gap: .5em; flex: none; }
 .win .dots i { width: 1em; height: 1em; border-radius: 50%; display: block; position: relative; }
 .win .dots i:nth-child(1)::after { content: ''; position: absolute; inset: -.6em; }
@@ -94,7 +93,7 @@ body {
 .win .dots i:nth-child(2) { background: var(--dot-y); }
 .win .dots i:nth-child(3) { background: var(--dot-g); }
 .win .ttl { font-size: 1em; color: var(--ink-soft); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: .29em; }
-.win .body { border-radius: 0 0 1em 1em; padding: 1.14em 1.29em 1.43em; font-family: var(--font-win); font-size: 1.357em; line-height: 1.45; overflow-wrap: anywhere; }
+.win .body { padding: 1.14em 1.29em 1.43em; font-family: var(--font-win); font-size: 1.357em; line-height: 1.45; overflow-wrap: anywhere; }
 .win[data-c="1"] .bar { background: var(--w1-head) } .win[data-c="1"] .body { background: var(--w1-body) }
 .win[data-c="2"] .bar { background: var(--w2-head) } .win[data-c="2"] .body { background: var(--w2-body) }
 .win[data-c="3"] .bar { background: var(--w3-head) } .win[data-c="3"] .body { background: var(--w3-body) }

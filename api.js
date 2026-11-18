@@ -15,7 +15,7 @@
     }, function (e) { clearTimeout(t); throw e; });
   }
   function newId() {
-    var A = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789", b = new Uint8Array(6), s = "";
+    var A = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789", b = new Uint8Array(8), s = "";
     (window.crypto || window.msCrypto).getRandomValues(b);
     for (var i = 0; i < b.length; i++) s += A.charAt(b[i] % A.length);
     return s;
@@ -31,25 +31,16 @@
     /* 通过 get_share 函数按 id 取一条分享（不允许列出全部） */
     getShare: function (id) {
       if (!/^[A-Za-z0-9]{6,16}$/.test(id)) return Promise.reject(new Error("bad id"));
-      return req("rpc/get_share", { method: "POST", headers: jsonHeaders(), body: JSON.stringify({ p_id: id }) }, 8000)
+      return req("rpc/get_share", { method: "POST", headers: jsonHeaders(), body: JSON.stringify({ p_id: id }) })
         .then(function (r) { return r.json(); });
     },
     /* 保存一条分享，返回短 id */
     saveShare: function (data) {
       function once() {
         var id = newId();
-        return req("shares", { method: "POST", headers: jsonHeaders({ Prefer: "return=minimal" }), body: JSON.stringify({ id: id, data: data }) }, 8000).then(function () { return id; });
+        return req("shares", { method: "POST", headers: jsonHeaders({ Prefer: "return=minimal" }), body: JSON.stringify({ id: id, data: data }) }).then(function () { return id; });
       }
-      function retry(e) { if (e && e.status === 409 && --left > 0) return once().catch(retry); throw e; }
-      var left = 3;
-      return once().catch(retry);
-    },
-    /* 回执：kind = open（拆开了信）/ yes（点了愿意） */
-    reply: function (id, kind) {
-      return req("replies", { method: "POST", headers: jsonHeaders({ Prefer: "return=minimal" }), body: JSON.stringify({ share_id: id, kind: kind }) });
-    },
-    getReplies: function (ids) {
-      return req("rpc/get_replies", { method: "POST", headers: jsonHeaders(), body: JSON.stringify({ p_ids: ids }) }).then(function (r) { return r.json(); });
+      return once().catch(function (e) { if (e && e.status === 409) return once(); throw e; });
     }
   };
 })();

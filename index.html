@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>冬日弹窗</title>
+<script>
+/* 分享链接（?s= / ?t= / #z…）先给 <html> 打上 viewer 标记，按钮从第一帧起就是隐藏的 */
+(function(){var q=location.search,h=location.hash;if(/[?&](s|t)=/.test(q)||/^#[zp][A-Za-z0-9_-]{8,}/.test(h))document.documentElement.classList.add("viewer");})();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;600&family=ZCOOL+KuaiLe&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<canvas id="fx" aria-hidden="true"></canvas>
+<div id="stage" aria-live="polite"></div>
+<p class="hint" id="hint">点窗口置顶，拖标题栏移动，点红点关闭</p>
+<div class="fabs">
+  <button class="fab" id="btnShare" type="button">分享</button>
+  <button class="fab" id="btnEdit" type="button">修改</button>
+  <button class="fab" id="btnMore" type="button">更多</button>
+  <button class="fab" id="btnSound" type="button" aria-pressed="false">音乐</button>
+  <button class="fab" id="btnReplay" type="button">重播</button>
+</div>
+
+<div class="scrim" id="scrim" hidden></div>
+
+<section class="sheet" id="sheetEdit" hidden aria-label="修改弹窗内容">
+  <div class="sheet-in">
+    <h2>修改弹窗内容</h2>
+    <div class="row">
+      <div class="field">
+        <label for="fTitle">窗口标题</label>
+        <input id="fTitle" type="text" maxlength="20">
+      </div>
+      <div class="field" style="flex: 0 1 110px">
+        <label for="fIcon">标题小图标</label>
+        <input id="fIcon" type="text" maxlength="4">
+      </div>
+    </div>
+    <div class="field">
+      <label for="fMsgs">弹窗文字（一行一个窗口，最多 40 个）</label>
+      <textarea id="fMsgs"></textarea>
+    </div>
+    <div>
+      <div class="lbl" style="margin-bottom: 8px">配色</div>
+      <div class="chips" id="skinChips"></div>
+    </div>
+    <div class="field">
+      <label for="fLayout">弹窗排布</label>
+      <select id="fLayout">
+        <option value="auto">自动（表白模板用爱心）</option>
+        <option value="heart">爱心形状（至少 4 条文字）</option>
+        <option value="scatter">随机散落</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="fGap">弹出速度：每个间隔 <span id="gapVal"></span> 秒</label>
+      <input id="fGap" type="range" min="100" max="1500" step="50">
+    </div>
+    <div class="row"><div class="field"><label for="fTo">收件人（信封上写“给 ××”）</label><input id="fTo" type="text" maxlength="12"></div><div class="field"><label for="fFrom">落款（信封和结尾署名）</label><input id="fFrom" type="text" maxlength="12"></div></div>
+    <label class="check"><input id="fEnv" type="checkbox"> 信封开场（点开才播放弹窗）</label>
+    <label class="check"><input id="fFin" type="checkbox"> 最后一句做成压轴窗口（表白模板带「愿意 / 再想想」）</label>
+    <label class="check"><input id="fFx" type="checkbox"> 飘落特效</label>
+    <label class="check"><input id="fPets" type="checkbox"> 显示像素小猫和装饰</label>
+    <p class="small mode" id="modeNote"></p>
+    <div class="actions">
+      <button class="btn primary" id="btnSave" type="button">保存并播放</button>
+      <button class="btn" id="btnReset" type="button">恢复默认文字</button>
+      <button class="btn" id="btnClose" type="button">取消</button>
+    </div>
+  </div>
+</section>
+
+<section class="sheet" id="sheetMore" hidden aria-label="主题模板">
+  <div class="sheet-in">
+    <h2>主题模板</h2>
+    <p class="small">点一个模板，会换上它的配色和整套文字（原来的文字会被替换，选完可以点「撤销」）。</p>
+    <div class="tgrid" id="tgrid"></div>
+    <div class="actions"><button class="btn" id="btnMoreClose" type="button">关闭</button></div>
+  </div>
+</section>
+
+
+<section class="sheet" id="sheetShare" hidden aria-label="分享给 TA">
+  <div class="sheet-in">
+    <h2>分享给 TA</h2>
+    <p class="small">对方打开链接后直接进入你选的模板，页面上没有任何按钮。勾选信封开场时，先看到信封，点开后弹窗才一个个弹出来。</p>
+    <div class="row">
+      <div class="field"><label for="sTo">收件人名字</label><input id="sTo" type="text" maxlength="12" placeholder="比如：小明"></div>
+      <div class="field"><label for="sFrom">落款（你的名字）</label><input id="sFrom" type="text" maxlength="12" placeholder="比如：小红"></div>
+    </div>
+    <label class="check"><input id="sEnv" type="checkbox" checked> 信封开场（点开才播放，同时开启音乐）</label>
+    <div class="qrbox"><img id="qrImg" alt="分享二维码" hidden><p class="small" id="qrNote"></p></div>
+    <div class="field"><label for="sLink">专属链接</label><input id="sLink" type="text" readonly></div>
+    <div class="actions">
+      <button class="btn primary" id="btnCopy" type="button">复制链接</button>
+      <button class="btn" id="btnNative" type="button" hidden>发给朋友</button>
+      <button class="btn" id="btnShClose" type="button">关闭</button>
+    </div>
+    <p class="small">内容保存在云端，链接很短；改了文字、名字后会自动生成新的链接。</p>
+  </div>
+</section>
+
+<div class="toast" id="toast" hidden role="status"><span id="toastText"></span><button type="button" id="toastUndo">撤销</button></div>
+
+<script src="config.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';document.head.appendChild(s)"></script>
+<script src="api.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

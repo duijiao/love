@@ -33,7 +33,7 @@
   function tplOf(id) { return TEMPLATES[id] || TEMPLATES[defSkin()]; }
   function mkDefaults() {
     var id = defSkin(), t = TEMPLATES[id];
-    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, accept: "", cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, fish: true, randGame: false, catVoice: true, knock: true, selfie: true, cake: true, wish: true };
+    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, accept: "", cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, fish: true, randGame: false, catVoice: true, knock: true, selfie: true, selfiePhoto: null, cake: true, wish: true };
   }
   var DEFAULTS = mkDefaults();
 
@@ -82,6 +82,14 @@
     var url = typeof b.url === "string" && base && b.url.indexOf(base) === 0 && /^[A-Za-z0-9._:\/-]+$/.test(b.url) ? b.url : "";
     return { id: id, url: url, name: typeof b.name === "string" ? b.name.slice(0, 40) : "", dur: Math.max(0, Math.min(1800, +b.dur || 0)) };
   }
+  function normPhoto(b) {
+    if (!b || typeof b !== "object") return null;
+    var base = (API && API.mediaBase) || "";
+    var id = typeof b.id === "string" && /^[A-Za-z0-9]{6,24}$/.test(b.id) ? b.id : randId(10);
+    var url = typeof b.url === "string" && base && b.url.indexOf(base) === 0 && /^[A-Za-z0-9._:\/-]+$/.test(b.url) ? b.url : "";
+    return { id: id, url: url };
+  }
+  function extraMedia(o) { var r = []; if (o.bgm) r.push(o.bgm); if (o.selfiePhoto) r.push(o.selfiePhoto); return r; }
   function mediaSrc(m) { return objUrl[m.id] || m.url || ""; }
   function fmtDur(s) { s = Math.round(s || 0); return s > 0 ? Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2) : ""; }
   function setBlob(id, b) {
@@ -154,6 +162,7 @@
       catVoice: o.catVoice !== false,
       knock: o.knock !== false,
       selfie: o.selfie !== false,
+      selfiePhoto: normPhoto(o.selfiePhoto),
       cake: o.cake !== false,
       wish: o.wish !== false
     };
@@ -1279,17 +1288,38 @@
   }
 
   /* 画出那张合影：白边 + 小猫 + 手写字，存成 PNG */
-  function polaroidCanvas() {
-    var S = 2, W = 720, pad = 36, pw = W - pad * 2, ph = 600, H = pad + ph + 170, u = pw / 24;
+  /* 读入真实合照（本机 blob 或云端地址）；失败返回 null，退回画小猫合影 */
+  function loadRealPhoto() {
+    var m = state.selfiePhoto, src = m && mediaSrc(m);
+    if (!src) return Promise.resolve(null);
+    return new Promise(function (ok) {
+      var im = new Image(), t = setTimeout(function () { ok(null); }, 8000);
+      if (src.indexOf("blob:") !== 0) im.crossOrigin = "anonymous"; /* 云端图画进 canvas 才不会污染，保存才不报错 */
+      im.onload = function () { clearTimeout(t); ok(im.naturalWidth ? im : null); };
+      im.onerror = function () { clearTimeout(t); ok(null); };
+      im.src = src;
+    });
+  }
+  function polaroidCanvas(real) {
+    var S = 2, W = 720, pad = 36, pw = W - pad * 2, ph = 600, u = pw / 24;
+    if (real) ph = Math.round(Math.max(pw / 1.5, Math.min(pw / 0.85, pw * real.naturalHeight / real.naturalWidth))); /* 照片比例：横 3:2 到竖 0.85 之间，超出的裁掉 */
+    var H = pad + ph + 170, title = real ? "我们的合照" : "你们的小猫合影";
     var cv = document.createElement("canvas"); cv.width = W * S; cv.height = H * S;
     var x = cv.getContext("2d"); x.scale(S, S); x.imageSmoothingEnabled = false;
     var cs = getComputedStyle(root);
     function cvar(n, fb) { return (cs.getPropertyValue(n) || "").trim() || fb; }
     var fontP = document.fonts && document.fonts.load
-      ? Promise.race([document.fonts.load('40px "Ma Shan Zheng"', "你们的小猫合影"), new Promise(function (r) { setTimeout(r, 1200); })]).catch(function () {}) : Promise.resolve();
+      ? Promise.race([document.fonts.load('40px "Ma Shan Zheng"', "你们的小猫合影我们的合照"), new Promise(function (r) { setTimeout(r, 1200); })]).catch(function () {}) : Promise.resolve();
     return Promise.all([svgImg(catSvg(Math.round(u * S), catCfg("a"), "happy")), svgImg(pinkHeart(Math.round(u * 0.8 * S))), fontP]).then(function (r) {
       var catIm = r[0], hIm = r[1], gy = pad + ph * 0.86;
       x.fillStyle = "#fffdf8"; x.fillRect(0, 0, W, H);
+      if (real) {
+        x.save(); x.beginPath(); x.rect(pad, pad, pw, ph); x.clip(); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = "high";
+        var k = Math.max(pw / real.naturalWidth, ph / real.naturalHeight), dw = real.naturalWidth * k, dh = real.naturalHeight * k;
+        x.drawImage(real, pad + (pw - dw) / 2, pad + (ph - dh) / 2, dw, dh); x.restore();
+        x.strokeStyle = "rgba(0,0,0,.08)"; x.lineWidth = 2; x.strokeRect(pad, pad, pw, ph);
+        return finishCaption();
+      }
       x.save(); x.beginPath(); x.rect(pad, pad, pw, ph); x.clip();
       var g = x.createLinearGradient(pad, pad, pad + pw * 0.45, pad + ph);
       try { g.addColorStop(0, cvar("--bg-a", "#f7f3fb")); g.addColorStop(0.55, cvar("--bg-b", "#fbeef6")); g.addColorStop(1, cvar("--bg-c", "#eef4fb")); } catch (e) { g = "#f7f3fb"; }
@@ -1304,19 +1334,22 @@
       if (catIm) x.drawImage(catIm, pad + (pw - 14 * u) / 2, gy - 12 * u, catIm.width / S, catIm.height / S);
       x.restore();
       x.strokeStyle = "rgba(0,0,0,.08)"; x.lineWidth = 2; x.strokeRect(pad, pad, pw, ph);
+      return finishCaption();
+      function finishCaption() {
       var FF = '"Ma Shan Zheng","ZCOOL KuaiLe","Kaiti SC",STKaiti,KaiTi,cursive', d = new Date(), pz = function (n) { return (n < 10 ? "0" : "") + n; };
       var names = state.to && state.from ? state.from + " ♥ " + state.to : (state.from || state.to);
       var sub = [names, state.cat && state.cat.name, d.getFullYear() + "." + pz(d.getMonth() + 1) + "." + pz(d.getDate())].filter(Boolean).join(" · ");
-      x.textAlign = "center"; x.textBaseline = "alphabetic"; x.fillStyle = "#3b3550"; x.font = "64px " + FF; x.fillText("你们的小猫合影", W / 2, pad + ph + 80);
+      x.textAlign = "center"; x.textBaseline = "alphabetic"; x.fillStyle = "#3b3550"; x.font = "64px " + FF; x.fillText(title, W / 2, pad + ph + 80);
       var fs = 28; x.font = fs + "px " + FF; while (x.measureText(sub).width > pw - 20 && fs > 16) { fs -= 2; x.font = fs + "px " + FF; }
       x.fillStyle = "#8a7a8f"; x.fillText(sub, W / 2, pad + ph + 130);
       return cv;
+      }
     });
   }
 
   /* ---- 拍立得合影：小猫和相框一起出现，倒数三秒，咔嚓 ---- */
   function selfieGame(done) {
-    var vw = window.innerWidth, vh = window.innerHeight, ended = false, finished = false, tms = [], shotCv = null;
+    var vw = window.innerWidth, vh = window.innerHeight, ended = false, finished = false, tms = [], shotCv = null, realP = loadRealPhoto(), isReal = false;
     var fw = Math.max(200, Math.round(Math.min(320, vw * 0.78, (vh - 200) / 1.12))), P = fw * 0.9, PH = fw * 0.833, u = P / 24, gy = PH * 0.86;
     var ov = partyShell("selfie", "小猫要和你们合影啦 📸");
     var hint = ov.querySelector(".wg-hint"), skip = ov.querySelector(".wg-skip");
@@ -1347,7 +1380,7 @@
         if (!b) { showToast("保存失败了，试试长按照片", false); return; }
         var f = null; try { f = new File([b], "kitty-photo.png", { type: "image/png" }); } catch (e) {}
         var touch = window.matchMedia && matchMedia("(pointer: coarse)").matches;
-        if (touch && f && navigator.canShare && navigator.share && navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: "你们的小猫合影" }).catch(function () {}); return; }
+        if (touch && f && navigator.canShare && navigator.share && navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: isReal ? "我们的合照" : "你们的小猫合影" }).catch(function () {}); return; }
         var a = document.createElement("a"), link = URL.createObjectURL(b); a.href = link; a.download = "kitty-photo.png"; document.body.appendChild(a); a.click(); a.remove();
         setTimeout(function () { URL.revokeObjectURL(link); }, 4000); showToast("已保存图片", false);
       }, "image/png");
@@ -1367,12 +1400,12 @@
       count.textContent = ""; skip.style.display = "none"; sfxShutter(); sfxMeow("happy"); box.setMood("happy"); hint.textContent = "咔嚓！";
       var fl = mk("div", "sf-flash"); ov.appendChild(fl); setTimeout(function () { fl.remove(); }, 600);
       var t0 = Date.now();
-      polaroidCanvas().then(function (cv) {
+      realP.then(function (real) { isReal = !!real; return polaroidCanvas(real); }).then(function (cv) {
         if (ended) return; shotCv = cv; var url = cv.toDataURL("image/png");
         after(Math.max(500, 1100 - (Date.now() - t0)), function () {
           frame.style.height = frame.offsetHeight + "px"; frame.classList.add("done"); frame.innerHTML = "";
-          var img = new Image(); img.alt = "你们的小猫合影"; img.className = "sf-img"; img.src = url; frame.appendChild(img);
-          hint.textContent = "拍好啦：你们的小猫合影 💗"; btns.style.visibility = ""; tip.style.visibility = "";
+          var img = new Image(); img.alt = isReal ? "我们的合照" : "你们的小猫合影"; img.className = "sf-img"; img.src = url; frame.appendChild(img);
+          hint.textContent = isReal ? "拍好啦：我们的合照 💗" : "拍好啦：你们的小猫合影 💗"; btns.style.visibility = ""; tip.style.visibility = "";
         });
       }).catch(function () { hint.textContent = "照片没洗出来……"; after(1200, finish); });
     });
@@ -2103,7 +2136,7 @@
   var fFrom = document.getElementById("fFrom"), sheetShare = document.getElementById("sheetShare");
 
   /* ---- 编辑面板：图片和语音列表 ---- */
-  var draftMedia = [], rec = null, prev = null, draftBgm = null;
+  var draftMedia = [], rec = null, prev = null, draftBgm = null, draftSelfie = null;
   var fCats = document.getElementById("fCats"), fFw = document.getElementById("fFw"), fAccept = document.getElementById("fAccept"), fPuzzle = document.getElementById("fPuzzle"), fPhoto = document.getElementById("fPhoto"), btnAddBgm = document.getElementById("btnAddBgm"), btnBgmPrev = document.getElementById("btnBgmPrev"),
       btnBgmDel = document.getElementById("btnBgmDel"), fBgm = document.getElementById("fBgm"), bgmNote = document.getElementById("bgmNote");
   document.getElementById("fPuzzle").addEventListener("change", function () { if (this.checked) document.getElementById("fFin").checked = true; });
@@ -2122,6 +2155,28 @@
     document.getElementById("fCatEye").value = c.eye; document.getElementById("fCatBow").value = c.bow; renderCatPrev();
   }
   ["fCatName", "fCatFur", "fCatPat", "fCatEye", "fCatBow"].forEach(function (id) { var e = document.getElementById(id); e.addEventListener("input", renderCatPrev); e.addEventListener("change", renderCatPrev); });
+  /* 合照：只用一张，压缩后和别的图片一样先存本机，分享时才上传 */
+  var btnAddSelfie = document.getElementById("btnAddSelfie"), btnSelfieDel = document.getElementById("btnSelfieDel"), fSelfiePhoto = document.getElementById("fSelfiePhoto"), selfiePrev = document.getElementById("selfiePrev"), selfieNote = document.getElementById("selfieNote");
+  function dropDraftSelfie() { if (draftSelfie && (!state.selfiePhoto || state.selfiePhoto.id !== draftSelfie.id)) dropBlob(draftSelfie.id); }
+  function renderSelfie() {
+    var src = draftSelfie && mediaSrc(draftSelfie);
+    selfiePrev.innerHTML = "";
+    if (src) { var im = document.createElement("img"); im.src = src; im.alt = "合照预览"; im.className = "mthumb selfie-th"; selfiePrev.appendChild(im); }
+    selfiePrev.hidden = !src; btnSelfieDel.hidden = !src;
+    btnAddSelfie.textContent = src ? "换一张合照" : "上传真实合照";
+    selfieNote.textContent = src
+      ? "倒数拍完后，相框里会洗出这张照片（不再画小猫）。图片会压缩并去掉拍摄位置，点「分享」时才上传到云端。"
+      : "可选。不上传就还是画一张「你们的小猫合影」；上传后，拍完照显示的就是你们的真实合照。";
+  }
+  btnAddSelfie.addEventListener("click", function () { fSelfiePhoto.click(); });
+  fSelfiePhoto.addEventListener("change", function () {
+    var f = fSelfiePhoto.files && fSelfiePhoto.files[0]; fSelfiePhoto.value = ""; if (!f) return;
+    compressImage(f).then(function (r) {
+      dropDraftSelfie();
+      var id = randId(10); setBlob(id, r.blob); draftSelfie = { id: id, url: "" }; renderSelfie();
+    }, function () { showToast("这张图片读不出来，换 jpg / png / webp 试试", false); });
+  });
+  btnSelfieDel.addEventListener("click", function () { dropDraftSelfie(); draftSelfie = null; renderSelfie(); });
   var BGM_MAX = 6 * 1024 * 1024;
   function renderBgm() {
     stopPreview();
@@ -2293,6 +2348,7 @@
     stopRecording(true); stopPreview();
     draftMedia.forEach(function (m) { if (!state.media.some(function (s) { return s.id === m.id; })) dropBlob(m.id); });
     if (draftBgm && (!state.bgm || state.bgm.id !== draftBgm.id)) dropBlob(draftBgm.id);
+    dropDraftSelfie(); draftSelfie = null;
     draftBgm = null; draftMedia = [];
   }
   /* 保存时：新文件写进 IndexedDB，被删掉的清出去 */
@@ -2333,7 +2389,7 @@
     fLayout.value = state.layout; fTo.value = state.to; fFrom.value = state.from; fEnv.checked = state.envelope; fFin.checked = state.finale; fFx.checked = state.fx; fGap.value = state.gap; fPets.checked = state.pets; gapVal.textContent = (state.gap / 1000).toFixed(2);
     draftSkin = state.skin; renderSkinChips();
     draftMedia = clone(state.media); fAutoVoice.checked = state.autoVoice; renderMediaList(); recLabel();
-    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fFish").checked = state.fish; document.getElementById("fRand").checked = state.randGame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; document.getElementById("fWish").checked = state.wish; fCats.checked = state.cats; fFw.checked = state.fireworks; fAccept.value = state.accept || ""; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm();
+    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fFish").checked = state.fish; document.getElementById("fRand").checked = state.randGame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; document.getElementById("fWish").checked = state.wish; fCats.checked = state.cats; fFw.checked = state.fireworks; fAccept.value = state.accept || ""; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm(); draftSelfie = state.selfiePhoto ? clone(state.selfiePhoto) : null; renderSelfie();
     modeNote.textContent = "这里的修改保存在你自己的浏览器里；点「分享」会把当前内容存到云端，生成发给 TA 的链接。";
   }
   function closeAll() {
@@ -2366,12 +2422,13 @@
       msgs: lines.length ? lines : DEFAULTS.msgs.slice(),
       media: normMedia(draftMedia.filter(function (m) { return mediaSrc(m); })), autoVoice: fAutoVoice.checked,
       photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, accept: fAccept.value.trim().slice(0, 200), cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, fish: document.getElementById("fFish").checked, randGame: document.getElementById("fRand").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked, selfie: document.getElementById("fSelfie").checked, cake: document.getElementById("fCake").checked, wish: document.getElementById("fWish").checked,
+      selfiePhoto: draftSelfie && mediaSrc(draftSelfie) ? normPhoto(draftSelfie) : null,
       bgm: draftBgm && mediaSrc(draftBgm) ? normBgm(draftBgm) : null
     };
-    var oldMedia = state.media.concat(state.bgm ? [state.bgm] : []);
+    var oldMedia = state.media.concat(extraMedia(state));
     stopPreview(); unlockVoices();
-    sheetEdit.hidden = true; scrim.hidden = true; draftMedia = []; draftBgm = null;
-    commitMedia(next.media.concat(next.bgm ? [next.bgm] : []), oldMedia).then(function () { return persist(next); }).then(function (mode) {
+    sheetEdit.hidden = true; scrim.hidden = true; draftMedia = []; draftBgm = null; draftSelfie = null;
+    commitMedia(next.media.concat(extraMedia(next)), oldMedia).then(function () { return persist(next); }).then(function (mode) {
       play();
       showToast(mode === "shared" ? "已保存，所有人都会看到" : "已保存在这台设备上", false);
     });
@@ -2392,7 +2449,7 @@
   function useTemplate(id) {
     var t = TEMPLATES[id];
     undoState = clone(state);
-    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, accept: state.accept, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, fish: state.fish, randGame: state.randGame, catVoice: state.catVoice, knock: state.knock, selfie: state.selfie, cake: state.cake, wish: state.wish, bgm: state.bgm ? clone(state.bgm) : null };
+    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, accept: state.accept, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, fish: state.fish, randGame: state.randGame, catVoice: state.catVoice, knock: state.knock, selfie: state.selfie, cake: state.cake, wish: state.wish, selfiePhoto: state.selfiePhoto ? clone(state.selfiePhoto) : null, bgm: state.bgm ? clone(state.bgm) : null };
     closeAll();
     persist(next).then(function () { play(); showToast("已套用「" + t.name + "」", true); });
   }
@@ -2469,6 +2526,7 @@
   function rememberUrl(id, url) {
     state.media.forEach(function (m) { if (m.id === id) m.url = url; });
     if (state.bgm && state.bgm.id === id) state.bgm.url = url;
+    if (state.selfiePhoto && state.selfiePhoto.id === id) state.selfiePhoto.url = url;
     writeLocal(state); local = clone(state);
   }
   function uploadItem(m) {
@@ -2481,17 +2539,19 @@
     return p;
   }
   function withUploads(o) {
-    var items = o.media || [], hasB = !!o.bgm;
-    if (!items.length && !hasB) return Promise.resolve({ o: o, dropped: 0 });
-    if (!API.enabled) { o.media = []; o.bgm = null; return Promise.resolve({ o: o, dropped: items.length + (hasB ? 1 : 0) }); }
+    var items = o.media || [], hasB = !!o.bgm, hasP = !!o.selfiePhoto;
+    if (!items.length && !hasB && !hasP) return Promise.resolve({ o: o, dropped: 0 });
+    if (!API.enabled) { o.media = []; o.bgm = null; o.selfiePhoto = null; return Promise.resolve({ o: o, dropped: items.length + (hasB ? 1 : 0) + (hasP ? 1 : 0) }); }
     var jobs = items.map(function (m) {
       return uploadItem(m).then(function (url) { return { id: m.id, kind: m.kind, url: url, cap: m.cap, at: m.at, dur: m.dur }; }, function () { return null; });
     });
     var bj = hasB ? uploadItem(o.bgm).then(function (url) { return { id: o.bgm.id, url: url, name: o.bgm.name, dur: o.bgm.dur }; }, function () { return null; }) : Promise.resolve(null);
-    return Promise.all([Promise.all(jobs), bj]).then(function (r) {
+    var pj = hasP ? uploadItem(o.selfiePhoto).then(function (url) { return { id: o.selfiePhoto.id, url: url }; }, function () { return null; }) : Promise.resolve(null);
+    return Promise.all([Promise.all(jobs), bj, pj]).then(function (r) {
       var ok = r[0].filter(Boolean), dropped = items.length - ok.length;
       o.media = ok;
       if (hasB) { if (r[1]) o.bgm = r[1]; else { o.bgm = null; dropped++; } }
+      if (hasP) { if (r[2]) o.selfiePhoto = r[2]; else { o.selfiePhoto = null; dropped++; } }
       return { o: o, dropped: dropped };
     });
   }
@@ -2510,7 +2570,7 @@
   function buildShare() {
     var seq = ++shSeq, o = clone(state);
     o.to = sTo.value.trim().slice(0, 12); o.from = sFrom.value.trim().slice(0, 12); o.envelope = sEnv.checked;
-    sLink.value = o.media.length || o.bgm ? "正在上传图片、语音和歌曲…" : "生成中…";
+    sLink.value = o.media.length || o.bgm || o.selfiePhoto ? "正在上传图片、语音和歌曲…" : "生成中…";
     shareUrl(o).then(function (r) { if (seq === shSeq) showShare(r.url, r.dropped); });
   }
   function saveNames() {
@@ -2573,7 +2633,7 @@
     if (sharePromise) sharePromise.then(function (d) { var s = norm(d); if (s) startViewer(s); else badLink(); }, badLink);
     else if (hm) decodeShare(hm[1]).then(function (s) { if (s) startViewer(s); else badLink(); });
     else if (tid && TEMPLATES[tid]) startViewer(fromTemplate(tid));
-    else { setViewing(false); state = local || clone(DEFAULTS); loadBlobs(state.media.concat(state.bgm ? [state.bgm] : [])).then(boot); }
+    else { setViewing(false); state = local || clone(DEFAULTS); loadBlobs(state.media.concat(extraMedia(state))).then(boot); }
   }
   document.addEventListener("pointerdown", function () { if (viewing && !soundOn && !userMuted && state.bgm && mediaSrc(state.bgm)) setSound(true); }, true);
   if (viewing) Promise.race([refreshTemplates(), new Promise(function (r) { setTimeout(r, 3000); })]).then(init);

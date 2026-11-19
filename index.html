@@ -98,6 +98,16 @@
     <div class="field"><label for="fAccept">点「愿意」后的弹窗文字（留空用默认）</label><input id="fAccept" type="text" maxlength="200" placeholder="我就知道你会答应 💗"></div>
     <label class="check"><input id="fFw" type="checkbox"> 压轴烟花：点「愿意」后窗口炸成烟花，聚成那句话和一颗心（点屏幕可跳过）</label>
     <label class="check"><input id="fSelfie" type="checkbox"> 拍立得合影：点「愿意」后，小猫和相框一起出现，自动拍一张「你们的小猫合影」，可以保存成图片（需开着小猫和压轴窗口）</label>
+    <div class="mediabox" id="selfieBox">
+      <div class="lbl">合照照片（可选，用于「拍立得合影」）</div>
+      <div class="mhead">
+        <button class="mbtn" id="btnAddSelfie" type="button">上传真实合照</button>
+        <button class="mbtn" id="btnSelfieDel" type="button" hidden>不用了，画小猫合影</button>
+      </div>
+      <input id="fSelfiePhoto" type="file" accept="image/*" hidden>
+      <div id="selfiePrev" hidden></div>
+      <p class="small" id="selfieNote"></p>
+    </div>
     <label class="check"><input id="fCake" type="checkbox"> 爱心蛋糕：放烟花前小猫把蛋糕推下桌，蜡烛亮起，吹一口气（麦克风）或点一下屏幕才开始放烟花（需开着小猫和压轴窗口）</label>
     <label class="check"><input id="fWish" type="checkbox"> 哈气许愿：蜡烛亮起后，屏幕蒙上一层水汽，用手指在雾上写下愿望，写完雾气把愿望收走，才轮到吹蜡烛（需开着爱心蛋糕）</label>
     <div class="mediabox">

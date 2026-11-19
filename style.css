@@ -464,3 +464,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .fg-cat .cbox { transform-origin: 50% 100%; transform: scale(var(--fat, 1)); transition: transform .4s; }
 .fg-cat.chomp .cbox { animation: catBob .12s steps(2) 4; }
 @media (prefers-reduced-motion: reduce) { .fg-fish, .fg-fish * , .fg-sun { animation: none !important; } }
+
+/* 合照照片预览（编辑面板） */
+#selfiePrev { display: flex; }
+#selfiePrev .selfie-th { width: 96px; height: 96px; }

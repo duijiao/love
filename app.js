@@ -33,7 +33,7 @@
   function tplOf(id) { return TEMPLATES[id] || TEMPLATES[defSkin()]; }
   function mkDefaults() {
     var id = defSkin(), t = TEMPLATES[id];
-    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, accept: "", cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, catVoice: true, knock: true, selfie: true, cake: true };
+    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, accept: "", cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, fish: true, randGame: false, catVoice: true, knock: true, selfie: true, cake: true, wish: true };
   }
   var DEFAULTS = mkDefaults();
 
@@ -149,10 +149,13 @@
       cat: normCat(o.cat),
       wand: o.wand !== false,
       boxgame: o.boxgame !== false,
+      fish: o.fish !== false,
+      randGame: !!o.randGame,
       catVoice: o.catVoice !== false,
       knock: o.knock !== false,
       selfie: o.selfie !== false,
-      cake: o.cake !== false
+      cake: o.cake !== false,
+      wish: o.wish !== false
     };
   }
   function sig(s) { return JSON.stringify(s); }
@@ -180,8 +183,11 @@
     letter: ["#######", "##ooo##", "#o#o#o#", "#ooooo#", "#######"],
     box: ["  #####  ", "#########", "#ooo#ooo#", "#########", "#ooo#ooo#", "#ooo#ooo#", "#ooo#ooo#", "#########"],
     heart: [" ## ## ", "#ooooo#", "#ooooo#", " #ooo# ", "  #o#  ", "   #   "],
+    fish: ["  #####      #", " #ooooo#    ##", "#o#oooooo#####", "#oooooooooo###", " #oooooo#o  ##", "  ######    # "],
     star: ["   #   ", "   #   ", " ##o## ", "#ooooo#", " ##o## ", "   #   ", "   #   "]
   };
+  /* 倒挂的鱼：把横放的鱼逆时针转 90°，头朝下、尾巴在上 */
+  SPRITES.fishv = (function (r) { var H = r.length, W = r[0].length, out = []; for (var y = 0; y < W; y++) { var row = ""; for (var x = 0; x < H; x++) row += r[x].charAt(W - 1 - y) || " "; out.push(row); } return out; })(SPRITES.fish);
   function sprite(name, px, fillVar) {
     var rows = SPRITES[name], w = rows[0].length, h = rows.length, s = "";
     for (var y = 0; y < h; y++) for (var x = 0; x < w; x++) {
@@ -751,6 +757,124 @@
     });
   }
 
+  /* ---- 晒鱼干 + 喂猫：先把鱼干挂到绳子上晒，晒好后一条条拿给小猫，吃饱了才送礼物盒 ---- */
+  function fishGame(done) {
+    var vw = window.innerWidth, vh = window.innerHeight, u = Math.max(4, Math.min(6, Math.round(vw / 70))), N = 4;
+    var fw = SPRITES.fish[0].length * u, fh = SPRITES.fish.length * u;   /* 横放的鱼 */
+    var vwid = SPRITES.fishv[0].length * u, vhei = SPRITES.fishv.length * u; /* 倒挂的鱼 */
+    var ropeY = Math.round(vh * 0.26), x0 = Math.max(26, vw * 0.1), x1 = vw - x0;
+    var slots = []; for (var i = 0; i < N; i++) slots.push(x0 + (x1 - x0) * (i + 0.5) / N);
+    var ov = document.createElement("div"); ov.className = "wandgame fishgame";
+    ov.innerHTML = '<div class="wg-hint"></div><div class="wg-hearts"></div><div class="fg-sun"></div><div class="fg-rope"></div><div class="fg-post l"></div><div class="fg-post r"></div><div class="fg-basket"></div><button type="button" class="wg-skip">跳过</button>';
+    var q = function (s) { return ov.querySelector(s); }, hint = q(".wg-hint"), hearts = q(".wg-hearts"), sun = q(".fg-sun"), basket = q(".fg-basket");
+    var rope = q(".fg-rope"); rope.style.cssText = "left:" + (x0 - 14) + "px;width:" + (x1 - x0 + 28) + "px;top:" + ropeY + "px";
+    q(".fg-post.l").style.cssText = "left:" + (x0 - 18) + "px;top:" + (ropeY - 8) + "px;height:" + (vh * 0.5) + "px";
+    q(".fg-post.r").style.cssText = "left:" + (x1 + 12) + "px;top:" + (ropeY - 8) + "px;height:" + (vh * 0.5) + "px";
+    var bw = fw * 2 + 36, bh = fh * 2 + 34, bx = vw / 2 - bw / 2, by = vh * 0.62;
+    basket.style.cssText = "left:" + bx + "px;top:" + by + "px;width:" + bw + "px;height:" + bh + "px";
+    var tms = [], ended = false, phase = "hang", hung = 0, fed = 0, idleT = 0, drag = null;
+    function later(fn, ms) { var t = setTimeout(function () { if (!ended) fn(); }, ms); tms.push(t); return t; }
+    function paint() { hearts.textContent = phase === "hang" ? "🐟 " + hung + " / " + N : "♥".repeat(fed) + "♡".repeat(N - fed); }
+    function say(t) { hint.textContent = t; }
+    /* 鱼：fresh（刚捞的，银蓝）和 dried（晒好的，金黄）叠在一起，晒的时候淡入 */
+    var fish = [];
+    for (var k = 0; k < N; k++) (function (k) {
+      var el = document.createElement("div"); el.className = "fg-fish basket";
+      el.innerHTML = '<div class="ff-in"><div class="ff-fresh">' + sprite("fish", u, "--fish") + '</div><div class="ff-dry">' + sprite("fish", u, "--fishd") + "</div></div>";
+      var col = k % 2, row = Math.floor(k / 2);
+      var f = { el: el, k: k, state: "basket", bx: bx + 12 + col * (fw + 12), by: by + 10 + row * (fh + 8) - 4 };
+      el.style.left = f.bx + "px"; el.style.top = f.by + "px"; el.style.width = fw + "px"; el.style.height = fh + "px";
+      ov.appendChild(el); fish.push(f);
+      el.addEventListener("pointerdown", function (e) { onDown(e, f); });
+    })(k);
+    var catEl = null, cb = null, bub = null, cx = vw / 2, cy = vh * 0.74, cu = Math.max(5, Math.min(8, Math.round(vw / 60)));
+    if (res) res.el.style.visibility = "hidden";
+    document.body.appendChild(ov);
+    say("先把鱼干挂上绳子晒太阳 ☀️\n点一条鱼就行"); paint(); sfxMeow("ask");
+    function resetIdle() { clearTimeout(idleT); idleT = setTimeout(function () { if (ended) return; auto(); }, 7000); tms.push(idleT); }
+    function auto() { /* 一段时间没动手，就替他做一步 */
+      var f; if (phase === "hang") { f = fish.filter(function (x) { return x.state === "basket"; })[0]; if (f) hang(f); }
+      else if (phase === "feed") { f = fish.filter(function (x) { return x.state === "hung"; })[0]; if (f) feedFly(f); }
+    }
+    function hangPos(f) { var s = slots[hung]; return { x: s - vwid / 2, y: ropeY + 4 }; }
+    function hang(f) {
+      if (phase !== "hang" || f.state !== "basket") return; f.state = "fly";
+      var p = hangPos(f); f.hx = p.x; f.hy = p.y; hung++; paint();
+      var el = f.el; el.classList.remove("basket"); el.classList.add("hanging");
+      el.querySelector(".ff-fresh").innerHTML = sprite("fishv", u, "--fish"); el.querySelector(".ff-dry").innerHTML = sprite("fishv", u, "--fishd");
+      el.style.width = vwid + "px"; el.style.height = vhei + "px";
+      el.style.left = p.x + "px"; el.style.top = p.y + "px";
+      sfxMeow("short", hung * 2);
+      later(function () { f.state = "hung"; el.classList.add("swing"); sfxDing(hung); }, 520);
+      if (hung >= N) later(startDry, 900); else { say("再挂一条（" + hung + " / " + N + "）"); resetIdle(); }
+    }
+    function startDry() {
+      phase = "dry"; clearTimeout(idleT); paint(); say("晒太阳中…… ☀️");
+      basket.classList.add("out"); sun.classList.add("shine"); ov.classList.add("sunny");
+      fish.forEach(function (f, i) { later(function () { f.el.classList.add("dried"); sfxDing(i + 2); }, 1200 + i * 450); });
+      later(startFeed, 1200 + N * 450 + 900);
+    }
+    function startFeed() {
+      phase = "feed"; fed = 0; paint(); say("晒好啦！把鱼干喂给小猫 🐱\n拖过去，或点一下");
+      sun.classList.remove("shine"); sun.classList.add("set");
+      catEl = document.createElement("div"); catEl.className = "fg-cat";
+      cb = catBox(cu, catCfg("a"), "open"); bub = document.createElement("div"); bub.className = "cbub";
+      catEl.appendChild(cb); catEl.appendChild(bub);
+      catEl.style.left = (-14 * cu - 10) + "px"; catEl.style.top = (cy - 6 * cu) + "px"; ov.appendChild(catEl);
+      void catEl.offsetWidth; catEl.style.transition = "left .9s ease-out"; catEl.style.left = (cx - 7 * cu) + "px";
+      later(function () { bub.textContent = "喵～好饿 🥺"; bub.classList.add("show"); sfxMeow("ask"); }, 950);
+      resetIdle();
+    }
+    function catPos() { return { x: cx, y: cy }; }
+    function feedFly(f) {
+      if (phase !== "feed" || f.state !== "hung") return; f.state = "fly"; var el = f.el;
+      el.classList.remove("swing"); el.classList.add("flying"); el.style.left = (cx - vwid / 2) + "px"; el.style.top = (cy - vhei / 2) + "px";
+      later(function () { eat(f); }, 480);
+    }
+    function eat(f) {
+      f.state = "eaten"; f.el.classList.add("gone"); later(function () { f.el.remove(); }, 250);
+      fed++; paint(); clearTimeout(idleT);
+      cb.setMood("wide"); bub.textContent = ["嗷呜！", "好吃～", "咔嚓咔嚓", "再来！"][Math.min(fed, N) - 1] || "嗷呜！"; bub.classList.add("show");
+      catEl.classList.add("chomp"); catEl.style.setProperty("--fat", 1 + fed * 0.07); sfxMeow("short", fed * 2);
+      later(function () { catEl.classList.remove("chomp"); if (fed < N) { cb.setMood("open"); bub.classList.remove("show"); } }, 600);
+      if (fed >= N) later(full, 800); else { say("还饿！再喂一条（" + fed + " / " + N + "）"); resetIdle(); }
+    }
+    function full() {
+      phase = "full"; cb.setMood("happy"); bub.textContent = "吃饱啦～💗"; bub.classList.add("show"); say("吃得圆滚滚，满意了～"); sfxMeow("happy");
+      later(function () { finish(); }, 1500);
+    }
+    function finish() {
+      if (ended) return; ended = true; tms.forEach(clearTimeout); wandAbort = null;
+      ov.classList.add("off"); setTimeout(function () { ov.remove(); if (res) res.el.style.visibility = ""; done(); }, 420);
+    }
+    wandAbort = function () { if (ended) return; ended = true; tms.forEach(clearTimeout); wandAbort = null; ov.remove(); if (res) res.el.style.visibility = ""; };
+    q(".wg-skip").addEventListener("click", function (e) { e.stopPropagation(); say("好吧，直接开盒～"); if (cb) cb.setMood("happy"); setTimeout(finish, 300); });
+    /* 交互：挂鱼阶段点一下；喂猫阶段可拖也可点 */
+    function onDown(e, f) {
+      if (ended) return; e.preventDefault(); resetIdle();
+      if (phase === "hang" && f.state === "basket") { hang(f); return; }
+      if (phase !== "feed" || f.state !== "hung") return;
+      var r = f.el.getBoundingClientRect();
+      drag = { f: f, ox: e.clientX - r.left, oy: e.clientY - r.top, sx: e.clientX, sy: e.clientY, moved: false, id: e.pointerId };
+      f.el.classList.remove("swing"); f.el.classList.add("dragging");
+      try { f.el.setPointerCapture(e.pointerId); } catch (_) {}
+    }
+    ov.addEventListener("pointermove", function (e) {
+      if (!drag || e.pointerId !== drag.id) return;
+      if (Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 8) drag.moved = true;
+      if (drag.moved) { drag.f.el.style.left = (e.clientX - drag.ox) + "px"; drag.f.el.style.top = (e.clientY - drag.oy) + "px"; }
+    });
+    function up(e) {
+      if (!drag || e.pointerId !== drag.id) return; var d = drag, f = d.f; drag = null; f.el.classList.remove("dragging");
+      if (!d.moved) { feedFly(f); return; }
+      var r = f.el.getBoundingClientRect(), mx = r.left + r.width / 2, my = r.top + r.height / 2;
+      if (Math.hypot(mx - cx, my - cy) < cu * 9) { f.state = "fly"; f.el.style.left = (cx - vwid / 2) + "px"; f.el.style.top = (cy - vhei / 2) + "px"; f.el.classList.add("flying"); later(function () { eat(f); }, 200); }
+      else { f.el.classList.add("flying"); f.el.style.left = f.hx + "px"; f.el.style.top = f.hy + "px"; later(function () { f.el.classList.remove("flying"); f.el.classList.add("swing"); }, 480); resetIdle(); }
+    }
+    ov.addEventListener("pointerup", up); ov.addEventListener("pointercancel", up);
+    resetIdle();
+  }
+
   /* ---- 小猫送信：每个窗口由小猫叼着信送来，压轴是一个会抖的礼物盒 ---- */
   function catOn() { return state.cats && !reduce && !!document.documentElement.animate; }
   function catDeliver(cx, cy, kind, done, idx) {
@@ -1292,7 +1416,7 @@
     return stop;
   }
   function cakeGame(done) {
-    var vw = window.innerWidth, vh = window.innerHeight, ended = false, finished = false, blown = false, lit = false, tms = [], stopMic = null;
+    var vw = window.innerWidth, vh = window.innerHeight, ended = false, finished = false, blown = false, lit = false, tms = [], stopMic = null, wishing = false, wished = false, endWish = function () {};
     var u = Math.max(5, Math.min(8, Math.round(vw / 60))), cu = Math.max(5, Math.min(9, Math.round(vw / 48)));
     var catWd = 14 * u, catH = 12 * u, cakeW = 15 * cu, cakeH = 16 * cu;
     var plankY = Math.round(vh * 0.32), edgeX = Math.round(vw * 0.72), groundY = Math.round(vh * 0.8);
@@ -1323,7 +1447,7 @@
       if (finished) return; finished = true; ended = true; tms.forEach(clearTimeout); if (stopMic) stopMic(); micClose(); partyClose(ov, done);
     }
     partyAbort = function () { if (finished) return; finished = true; ended = true; tms.forEach(clearTimeout); if (stopMic) stopMic(); micClose(); partyAbort = null; ov.remove(); if (res) res.el.style.visibility = ""; };
-    skip.addEventListener("click", function (e) { e.stopPropagation(); finish(); });
+    skip.addEventListener("click", function (e) { e.stopPropagation(); if (wishing) { endWish(false); return; } finish(); });
 
     function smoke(f) {
       var s = mk("div", "ck-smoke"); s.style.cssText = "left:" + (parseFloat(f.style.left) + 0.2 * cu) + "px;top:" + 0.3 * cu + "px;width:" + cu + "px;height:" + cu + "px"; inner.appendChild(s);
@@ -1338,7 +1462,7 @@
     }
     function askBlow() {
       lit = true; skip.textContent = "直接放烟花";
-      hint.textContent = "闭上眼睛许个愿，然后点一下屏幕，或对着手机吹一口气";
+      hint.textContent = wished ? "愿望收好啦～点一下屏幕，或对着手机吹一口气，把蜡烛吹灭" : "闭上眼睛许个愿，然后点一下屏幕，或对着手机吹一口气";
       ov.classList.add("ask"); ov.addEventListener("click", function (e) { if (e.target !== skip) blowOut(); });
       after(1600, function () {
         if (blown) return; hint.textContent = "吹气需要开麦克风；不想开就直接点一下屏幕";
@@ -1350,10 +1474,90 @@
         });
       });
     }
+    /* ---- 哈气许愿：屏幕蒙上水汽，用手指在雾上写下愿望；写完雾气把愿望收走，才轮到吹蜡烛 ---- */
+    function paintFog(x, W, H, d) {
+      var gr = x.createLinearGradient(0, 0, 0, H), i, r, cx, cy, rg;
+      gr.addColorStop(0, "rgba(228,238,250,.62)"); gr.addColorStop(1, "rgba(196,212,234,.5)");
+      x.fillStyle = gr; x.fillRect(0, 0, W, H);
+      for (i = 0; i < 60; i++) { /* 一团一团的雾 */
+        r = (40 + Math.random() * 120) * d; cx = Math.random() * W; cy = Math.random() * H;
+        rg = x.createRadialGradient(cx, cy, 0, cx, cy, r); rg.addColorStop(0, "rgba(255,255,255,.16)"); rg.addColorStop(1, "rgba(255,255,255,0)");
+        x.fillStyle = rg; x.fillRect(cx - r, cy - r, 2 * r, 2 * r);
+      }
+      for (i = 0; i < 240; i++) { /* 细小的水珠 */
+        cx = Math.random() * W; cy = Math.random() * H; r = (0.8 + Math.random() * 2.2) * d;
+        x.fillStyle = "rgba(255,255,255," + (0.14 + Math.random() * 0.24) + ")"; x.beginPath(); x.arc(cx, cy, r, 0, 6.2832); x.fill();
+        x.fillStyle = "rgba(110,140,185,.2)"; x.beginPath(); x.arc(cx + r * 0.3, cy + r * 0.4, r * 0.55, 0, 6.2832); x.fill();
+      }
+    }
+    function wishPhase() {
+      var cv0 = document.createElement("canvas");
+      if (!state.wish || !cv0.getContext || !cv0.getContext("2d")) { askBlow(); return; }
+      wishing = true; ov.classList.add("wishing"); skip.textContent = "跳过许愿"; hint.textContent = "对着屏幕哈一口气……"; sfxPuff();
+      var dpr = Math.min(2, window.devicePixelRatio || 1), W = Math.round(vw * dpr), H = Math.round(vh * dpr);
+      var cv = mk("canvas", "ck-fog"); cv.width = W; cv.height = H; var g = cv.getContext("2d");
+      var fogCv = document.createElement("canvas"); fogCv.width = W; fogCv.height = H; paintFog(fogCv.getContext("2d"), W, H, dpr);
+      g.drawImage(fogCv, 0, 0); cv.style.opacity = "0"; ov.appendChild(cv);
+      var btns = mk("div", "ck-wbtns", '<button type="button" class="sf-b ck-wre">重写</button><button type="button" class="sf-b save ck-wok" disabled>许好了 ✨</button>');
+      btns.style.visibility = "hidden"; ov.appendChild(btns);
+      var re = btns.querySelector(".ck-wre"), ok = btns.querySelector(".ck-wok");
+      var ready = false, sealing = false, drawing = false, started = false, lx = 0, ly = 0, ink = 0, drips = [], raf = 0, bw = Math.max(13, Math.min(26, vw * 0.045)) * dpr;
+      requestAnimationFrame(function () { requestAnimationFrame(function () { cv.style.opacity = "1"; }); });
+      after(1700, function () { ready = true; btns.style.visibility = ""; hint.textContent = "屏幕起雾了，用手指在雾上写下你的愿望 ✍️"; });
+
+      endWish = function (sealed) {
+        if (!wishing) return; wishing = false; sealing = false; wished = !!sealed; drips = [];
+        if (raf) cancelAnimationFrame(raf); raf = 0; cv.remove(); btns.remove(); ov.classList.remove("wishing"); endWish = function () {};
+        if (!ended) askBlow();
+      };
+      function pt(e) { var r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]; }
+      function wipe(x0, y0, x1, y1) { /* 手指划过的地方，雾被擦开 */
+        g.globalCompositeOperation = "destination-out"; g.lineCap = "round"; g.lineJoin = "round"; g.strokeStyle = "#000"; g.lineWidth = bw;
+        g.shadowColor = "#000"; g.shadowBlur = bw * 0.45; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1 + 0.01, y1); g.stroke(); g.shadowBlur = 0;
+        g.globalCompositeOperation = "source-over";
+      }
+      function dripLoop() { /* 擦开的地方偶尔会淌下一道水痕 */
+        raf = 0; if (ended || !wishing) return;
+        g.globalCompositeOperation = "destination-out"; g.fillStyle = "#000";
+        drips = drips.filter(function (d) {
+          g.beginPath(); g.arc(d.x, d.y, 1.7 * dpr, 0, 6.2832); g.fill(); d.y += d.v; d.len -= d.v; return d.len > 0 && d.y < H;
+        });
+        g.globalCompositeOperation = "source-over";
+        if (drips.length) raf = requestAnimationFrame(dripLoop);
+      }
+      cv.addEventListener("pointerdown", function (e) {
+        if (!ready || sealing) return; e.preventDefault(); drawing = true; try { cv.setPointerCapture(e.pointerId); } catch (x) {}
+        var p = pt(e); lx = p[0]; ly = p[1]; wipe(lx, ly, lx, ly);
+        if (!started) { started = true; hint.textContent = "写下你的心愿……写完点「许好了」"; }
+      });
+      cv.addEventListener("pointermove", function (e) {
+        if (!drawing || sealing) return; e.preventDefault(); var p = pt(e); wipe(lx, ly, p[0], p[1]);
+        ink += Math.sqrt((p[0] - lx) * (p[0] - lx) + (p[1] - ly) * (p[1] - ly)) / dpr; lx = p[0]; ly = p[1];
+        if (ink > 160) ok.disabled = false;
+        if (ink > 90 && drips.length < 9 && Math.random() < 0.02) { drips.push({ x: lx, y: ly + bw * 0.4, v: (0.9 + Math.random() * 0.9) * dpr, len: (50 + Math.random() * 90) * dpr }); if (!raf) raf = requestAnimationFrame(dripLoop); }
+      });
+      function up() { drawing = false; }
+      cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
+      re.addEventListener("click", function (e) {
+        e.stopPropagation(); if (sealing) return; drips = []; g.globalCompositeOperation = "source-over"; g.drawImage(fogCv, 0, 0); ink = 0; ok.disabled = true; sfxPuff(); hint.textContent = "雾又蒙上了，重新写吧";
+      });
+      ok.addEventListener("click", function (e) {
+        e.stopPropagation(); if (sealing || ok.disabled) return; sealing = true; drawing = false; drips = []; btns.style.visibility = "hidden"; skip.style.visibility = "hidden";
+        hint.textContent = "雾气把愿望悄悄收走了 ✨"; sfxDing(4); sfxDing(2); cb.setMood("happy"); say("喵～", 1200);
+        var t0 = Date.now();
+        (function condense() {
+          if (ended || !wishing) return;
+          g.globalCompositeOperation = "source-over"; g.globalAlpha = 0.05; g.drawImage(fogCv, 0, 0); g.globalAlpha = 1;
+          if (Date.now() - t0 < 2200) { raf = requestAnimationFrame(condense); return; }
+          raf = 0; cv.style.transition = "opacity 1.1s ease-in"; cv.style.opacity = "0";
+          after(1200, function () { skip.style.visibility = ""; endWish(true); });
+        })();
+      });
+    }
     function lightUp() {
       ov.classList.add("lit"); hint.textContent = "蜡烛亮起来了 🕯️"; cb.setMood("up", "#ffd36b");
       flames.forEach(function (f, i) { after(i * 380, function () { f.classList.add("on"); if (soundOn && AC) tone(880 + i * 220, AC.currentTime, 0.1, 0.05, "triangle"); }); });
-      after(1500, askBlow);
+      after(1500, wishPhase);
     }
     function impact() {
       sfxThud(3, 1); shadow.classList.add("on");
@@ -1858,7 +2062,8 @@
             return;
           }
           var go = function () { catDeliver(el.offsetLeft + el.offsetWidth / 2, el.offsetTop + el.offsetHeight / 2, isFin ? "box" : "letter", reveal, i); };
-          var pre = []; if (isFin && state.wand) pre.push(wandGame); if (isFin && state.boxgame) pre.push(boxGame);
+          var pre = []; if (isFin && state.wand) pre.push(wandGame); if (isFin && state.boxgame) pre.push(boxGame); if (isFin && state.fish) pre.push(fishGame);
+          if (pre.length > 1 && state.randGame) pre = [pre[Math.floor(Math.random() * pre.length)]]; /* 随机只玩一个 */
           knockWhenDone(function () {
             if (myTok !== runTok) return;
             (function next(k) { if (k >= pre.length) { if (myTok === runTok) go(); return; } pre[k](function () { if (myTok === runTok) next(k + 1); }); })(0);
@@ -2128,7 +2333,7 @@
     fLayout.value = state.layout; fTo.value = state.to; fFrom.value = state.from; fEnv.checked = state.envelope; fFin.checked = state.finale; fFx.checked = state.fx; fGap.value = state.gap; fPets.checked = state.pets; gapVal.textContent = (state.gap / 1000).toFixed(2);
     draftSkin = state.skin; renderSkinChips();
     draftMedia = clone(state.media); fAutoVoice.checked = state.autoVoice; renderMediaList(); recLabel();
-    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; fCats.checked = state.cats; fFw.checked = state.fireworks; fAccept.value = state.accept || ""; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm();
+    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fFish").checked = state.fish; document.getElementById("fRand").checked = state.randGame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; document.getElementById("fWish").checked = state.wish; fCats.checked = state.cats; fFw.checked = state.fireworks; fAccept.value = state.accept || ""; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm();
     modeNote.textContent = "这里的修改保存在你自己的浏览器里；点「分享」会把当前内容存到云端，生成发给 TA 的链接。";
   }
   function closeAll() {
@@ -2160,7 +2365,7 @@
       layout: fLayout.value, to: fTo.value.trim(), from: fFrom.value.trim(), envelope: fEnv.checked, finale: fFin.checked, fx: fFx.checked,
       msgs: lines.length ? lines : DEFAULTS.msgs.slice(),
       media: normMedia(draftMedia.filter(function (m) { return mediaSrc(m); })), autoVoice: fAutoVoice.checked,
-      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, accept: fAccept.value.trim().slice(0, 200), cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked, selfie: document.getElementById("fSelfie").checked, cake: document.getElementById("fCake").checked,
+      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, accept: fAccept.value.trim().slice(0, 200), cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, fish: document.getElementById("fFish").checked, randGame: document.getElementById("fRand").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked, selfie: document.getElementById("fSelfie").checked, cake: document.getElementById("fCake").checked, wish: document.getElementById("fWish").checked,
       bgm: draftBgm && mediaSrc(draftBgm) ? normBgm(draftBgm) : null
     };
     var oldMedia = state.media.concat(state.bgm ? [state.bgm] : []);
@@ -2187,7 +2392,7 @@
   function useTemplate(id) {
     var t = TEMPLATES[id];
     undoState = clone(state);
-    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, accept: state.accept, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, catVoice: state.catVoice, knock: state.knock, bgm: state.bgm ? clone(state.bgm) : null };
+    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, accept: state.accept, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, fish: state.fish, randGame: state.randGame, catVoice: state.catVoice, knock: state.knock, selfie: state.selfie, cake: state.cake, wish: state.wish, bgm: state.bgm ? clone(state.bgm) : null };
     closeAll();
     persist(next).then(function () { play(); showToast("已套用「" + t.name + "」", true); });
   }

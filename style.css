@@ -422,4 +422,45 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .ck-smoke { background: rgba(220, 215, 230, .7); filter: blur(2px); }
 .ck-dust { background: rgba(190, 175, 200, .7); }
 .party.cake.ask { cursor: pointer; }
+.party.cake .wg-hint, .party.cake .wg-skip { z-index: 3; }
+.ck-fog { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 1; touch-action: none; cursor: crosshair; transition: opacity 1.6s ease-out; }
+.party.wishing .wg-hint { left: 50%; right: auto; transform: translateX(-50%); width: max-content; max-width: calc(100% - 32px); box-sizing: border-box; padding: 6px 16px; border-radius: 999px; background: rgba(255, 255, 255, .85); color: #34405a; text-shadow: none; font-size: 17px; }
+.ck-wbtns { position: absolute; left: 0; right: 0; bottom: calc(env(safe-area-inset-bottom, 0px) + 76px); display: flex; justify-content: center; gap: 12px; z-index: 3; }
+.sf-b:disabled { opacity: .45; cursor: default; }
 @media (prefers-reduced-motion: reduce) { .party, .party * { animation: none !important; } }
+
+/* ---- 晒鱼干 + 喂猫 ---- */
+.wandgame.fishgame { cursor: default; background: rgba(20, 10, 40, .72); transition: opacity .4s, background 1.2s; }
+.wandgame.fishgame.sunny { background: rgba(90, 50, 30, .62); }
+.fishgame .wg-hearts { top: calc(env(safe-area-inset-top, 0px) + 80px); }
+.fishgame .wg-hint { white-space: pre-line; padding: 0 16px; font-size: 18px; line-height: 1.35; }
+.fishgame { --fish: #aebfd6; --fishd: #e0a145; }
+.fg-sun { position: absolute; right: 8%; top: calc(env(safe-area-inset-top, 0px) + 70px); width: 54px; height: 54px; border-radius: 50%; background: #ffd34d; box-shadow: 0 0 0 8px rgba(255, 211, 77, .25), 0 0 40px 18px rgba(255, 211, 77, .55); opacity: 0; transform: translateY(-80px) scale(.6); transition: opacity .8s, transform 1s; pointer-events: none; }
+.fg-sun.shine { opacity: 1; transform: none; animation: sunPulse 1.6s ease-in-out infinite; }
+.fg-sun.set { opacity: 0; transform: translateY(-60px) scale(.7); }
+@keyframes sunPulse { 50% { box-shadow: 0 0 0 14px rgba(255, 211, 77, .18), 0 0 56px 26px rgba(255, 211, 77, .6); } }
+.fg-rope { position: absolute; height: 3px; border-radius: 2px; background: #c9a36a; box-shadow: 0 2px 3px rgba(0, 0, 0, .3); pointer-events: none; }
+.fg-post { position: absolute; width: 8px; border-radius: 4px; background: #8a6a43; pointer-events: none; }
+.fg-basket { position: absolute; border-radius: 6px 6px 18px 18px; background: repeating-linear-gradient(90deg, #c9985a 0 8px, #b5844a 8px 10px); border: 3px solid #8a6a43; box-shadow: 0 6px 12px rgba(0, 0, 0, .35); transition: opacity .5s, transform .5s; pointer-events: none; z-index: 0; }
+.fg-basket.out { opacity: 0; transform: translateY(30px); }
+.fg-fish { position: absolute; z-index: 1; transition: left .5s ease-in-out, top .5s ease-in-out, opacity .25s, transform .25s; touch-action: none; user-select: none; -webkit-user-select: none; }
+.fg-fish.basket { cursor: pointer; }
+.fg-fish.basket:hover { transform: translateY(-4px); }
+.fg-fish svg { display: block; shape-rendering: crispEdges; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, .35)); }
+.ff-in { position: relative; width: 100%; height: 100%; transform-origin: 50% 0; }
+.ff-dry { position: absolute; inset: 0; opacity: 0; transition: opacity 1s; }
+.fg-fish.dried .ff-dry { opacity: 1; }
+.fg-fish.dried .ff-fresh { opacity: 0; transition: opacity 1s; }
+.fg-fish.hanging .ff-in svg { }
+/* 挂上去的鱼换成倒挂的素材：靠 .rot 旋转横放的图 */
+.fg-fish.rot .ff-in { transform: translateY(0); }
+.fg-fish.swing .ff-in { animation: fishSwing 2.2s ease-in-out infinite; }
+@keyframes fishSwing { 0%, 100% { transform: rotate(-5deg); } 50% { transform: rotate(5deg); } }
+.fg-fish.dried { cursor: grab; }
+.fg-fish.dragging { cursor: grabbing; transition: none; z-index: 5; filter: drop-shadow(0 8px 8px rgba(0, 0, 0, .35)); }
+.fg-fish.flying { z-index: 4; }
+.fg-fish.gone { opacity: 0; transform: scale(.3); }
+.fg-cat { position: absolute; pointer-events: none; z-index: 3; }
+.fg-cat .cbox { transform-origin: 50% 100%; transform: scale(var(--fat, 1)); transition: transform .4s; }
+.fg-cat.chomp .cbox { animation: catBob .12s steps(2) 4; }
+@media (prefers-reduced-motion: reduce) { .fg-fish, .fg-fish * , .fg-sun { animation: none !important; } }

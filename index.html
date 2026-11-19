@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>I LOVE YOU</title>
+<title>冬日弹窗</title>
 <script>
 /* 分享链接（?s= / ?t= / #z…）先给 <html> 打上 viewer 标记，按钮从第一帧起就是隐藏的 */
 (function(){var q=location.search,h=location.hash;if(/[?&](s|t)=/.test(q)||/^#[zp][A-Za-z0-9_-]{8,}/.test(h))document.documentElement.classList.add("viewer");})();
@@ -88,8 +88,21 @@
     <label class="check"><input id="fEnv" type="checkbox"> 信封开场（点开才播放弹窗）</label>
     <label class="check"><input id="fFin" type="checkbox"> 最后一句做成压轴窗口（表白模板带「愿意 / 再想想」）</label>
     <label class="check"><input id="fPuzzle" type="checkbox"> 拼图告白：压轴那句话拆成碎片，藏在照片后面，拖到一起才能拼完整（需要已开压轴窗口，建议配 3 张以上照片）</label>
-    <label class="check"><input id="fCats" type="checkbox"> 小猫送信：每个窗口由小猫叼着信送来，压轴是一个会抖的礼物盒</label>
+    <label class="check"><input id="fCats" type="checkbox"> 小猫（送信、陪伴、看烟花）：小猫叼着信把窗口送来；屏幕角落有只会犯困、会炸毛、会生气的猫</label>
+    <label class="check"><input id="fKnock" type="checkbox"> 小猫打翻东西：小猫跳上桌子，把窗口一个个推下去，窗口带着重量摔在地上（会咚的一声、震一下；开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fWand" type="checkbox"> 逗猫棒小游戏：压轴前手指变逗猫棒，逗到小猫 4 次才送来礼物盒（可跳过）</label>
+    <label class="check"><input id="fBox" type="checkbox"> 猜纸箱小游戏：小猫藏进三个会换位的纸箱之一，猜对了才送来礼物盒（可跳过）</label>
+    <label class="check"><input id="fCatVoice" type="checkbox"> 小猫配音：用真猫的叫声，送信、睡醒、炸毛、生气、高兴时发出不同的“喵”（需开着音乐开关）</label>
     <label class="check"><input id="fFw" type="checkbox"> 压轴烟花：点「愿意」后窗口炸成烟花，聚成那句话和一颗心（点屏幕可跳过）</label>
+    <div class="mediabox">
+      <div class="lbl">你们的小猫</div>
+      <div class="field"><label for="fCatName">名字（信封和窗口标题上会用到）</label><input id="fCatName" type="text" maxlength="8" placeholder="比如：团子"></div>
+      <div class="field"><label for="fCatFur">毛色</label><select id="fCatFur"><option value="theme">跟随主题</option><option value="cream">奶油色</option><option value="orange">橘猫</option><option value="gray">灰猫</option><option value="black">黑猫</option><option value="white">白猫</option></select></div>
+      <div class="field"><label for="fCatPat">花纹</label><select id="fCatPat"><option value="none">没有</option><option value="spots">花斑</option><option value="tabby">虎纹</option><option value="socks">白袜子</option></select></div>
+      <div class="field"><label for="fCatEye">眼睛</label><select id="fCatEye"><option value="dark">黑色</option><option value="green">绿色</option><option value="blue">蓝色</option><option value="gold">金色</option></select></div>
+      <div class="field"><label for="fCatBow">领结</label><select id="fCatBow"><option value="none">没有</option><option value="red">红色</option><option value="blue">蓝色</option><option value="yellow">黄色</option><option value="pink">粉色</option></select></div>
+      <div id="catPrev" style="padding:10px 0 4px 6px"></div>
+    </div>
     <label class="check"><input id="fFx" type="checkbox"> 飘落特效</label>
     <label class="check"><input id="fPets" type="checkbox"> 显示像素小猫和装饰</label>
     <p class="small mode" id="modeNote"></p>
@@ -136,6 +149,7 @@
 <script src="config.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" onerror="var s=document.createElement('script');s.src='https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js';document.head.appendChild(s)"></script>
 <script src="api.js"></script>
+<script src="meows.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

@@ -33,7 +33,7 @@
   function tplOf(id) { return TEMPLATES[id] || TEMPLATES[defSkin()]; }
   function mkDefaults() {
     var id = defSkin(), t = TEMPLATES[id];
-    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true };
+    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, catVoice: true, knock: true };
   }
   var DEFAULTS = mkDefaults();
 
@@ -68,6 +68,12 @@
         at: Math.max(0, Math.min(40, parseInt(m.at, 10) || 0)), dur: Math.max(0, Math.min(120, +m.dur || 0)) });
     });
     return out;
+  }
+  function normCat(c) {
+    c = c && typeof c === "object" ? c : {};
+    function pick(v, list) { return list.indexOf(v) >= 0 ? v : list[0]; }
+    return { name: typeof c.name === "string" ? c.name.slice(0, 8) : "", fur: pick(c.fur, ["theme", "cream", "orange", "gray", "black", "white"]),
+      pat: pick(c.pat, ["none", "spots", "tabby", "socks"]), eye: pick(c.eye, ["dark", "green", "blue", "gold"]), bow: pick(c.bow, ["none", "red", "blue", "yellow", "pink"]) };
   }
   function normBgm(b) {
     if (!b || typeof b !== "object") return null;
@@ -138,7 +144,12 @@
       bgm: normBgm(o.bgm),
       puzzle: !!o.puzzle,
       cats: o.cats !== false,
-      fireworks: o.fireworks !== false
+      fireworks: o.fireworks !== false,
+      cat: normCat(o.cat),
+      wand: o.wand !== false,
+      boxgame: o.boxgame !== false,
+      catVoice: o.catVoice !== false,
+      knock: o.knock !== false
     };
   }
   function sig(s) { return JSON.stringify(s); }
@@ -162,6 +173,7 @@
   /* ---- 像素装饰 ---- */
   var SPRITES = {
     cat: ["  #         #  ", " ##         ## ", " #o#######o#  ", " #ooooooooo#  ", " #o#oooo#oo#  ", " #ooooooooo#  ", "  #ooo#ooo#   ", "  #ooooooo#   ", " #ooooooooo#  ", " #ooooooooo#  ", " #o##ooo##o#  ", " ### ### ###  "].map(function (r) { return r.slice(0, 14); }),
+    carton: ["##############", "#oooooooooooo#", "#oooo####oooo#", "##############", "#oooooooooooo#", "#oooooooooooo#", "#oooooooooooo#", "#oooooooooooo#", "#oooooooooooo#", "##############"],
     letter: ["#######", "##ooo##", "#o#o#o#", "#ooooo#", "#######"],
     box: ["  #####  ", "#########", "#ooo#ooo#", "#########", "#ooo#ooo#", "#ooo#ooo#", "#ooo#ooo#", "#########"],
     heart: [" ## ## ", "#ooooo#", "#ooooo#", " #ooo# ", "  #o#  ", "   #   "],
@@ -331,7 +343,7 @@
     var dots = document.createElement("div"); dots.className = "dots";
     dots.innerHTML = "<i></i><i></i><i></i>";
     var ttl = document.createElement("span"); ttl.className = "ttl";
-    ttl.textContent = (state.icon ? state.icon + " " : "") + state.title;
+    ttl.textContent = state.cats && state.cat.name ? state.cat.name + " · 第" + (i + 1) + "封" : (state.icon ? state.icon + " " : "") + state.title;
     bar.appendChild(dots); bar.appendChild(ttl);
     var ps = media && media.kind === "image" ? photoStyleOf(media) : null;
     var body = document.createElement("div"); body.className = "body";
@@ -485,16 +497,267 @@
   function outlineN() { return curSeq.length - (hasFin() ? 1 : 0); }
 
   /* ---- 压轴窗口 ---- */
+  /* ---- 你们的小猫：毛色 / 花纹 / 眼睛 / 领结，还有表情和心情 ---- */
+  var FUR = { cream: "#f6e3c1", orange: "#f2a65a", gray: "#b8bcc8", black: "#4a4756", white: "#fbf7ef" };
+  var PATC = { cream: "#d9a867", orange: "#c9742e", gray: "#8a8fa0", black: "#6b6778", white: "#d8d2c4" };
+  var EYEC = { dark: "#2b2530", green: "#2fa36b", blue: "#3f86e0", gold: "#e0a526" };
+  var BOWC = { red: "#e5484d", blue: "#4a8fe0", yellow: "#f2c230", pink: "#ff8fb1" };
+  function catCfg(slot, c) {
+    c = c || state.cat; var th = c.fur === "theme";
+    return { fur: th ? "var(--pet-" + (slot || "a") + ")" : FUR[c.fur], patc: th ? "var(--pet-c)" : PATC[c.fur], eye: EYEC[c.eye],
+      bow: c.bow === "none" ? null : BOWC[c.bow], socks: c.fur === "white" ? "#ffd1dc" : "#ffffff", pat: c.pat };
+  }
+  function catSvg(px, cf, mood, glow) {
+    var g = SPRITES.cat.map(function (r) { return r.split(""); });
+    function set(list, ch) { list.forEach(function (p) { g[p[0]][p[1]] = ch; }); }
+    if (cf.pat === "spots") set([[3, 2], [3, 9], [8, 3], [9, 8], [8, 9]], "p");
+    else if (cf.pat === "tabby") set([[3, 5], [3, 7], [7, 3], [7, 9], [9, 3], [9, 9], [8, 5], [8, 7]], "p");
+    else if (cf.pat === "socks") set([[10, 2], [10, 5], [10, 6], [10, 7], [10, 10]], "w");
+    if (cf.bow) set([[7, 5], [7, 6], [7, 7]], "b");
+    set([[4, 3], [4, 8]], "o");
+    if (mood === "sleep") set([[4, 2], [4, 3], [4, 4], [4, 7], [4, 8], [4, 9]], "#");
+    else if (mood === "happy") set([[4, 2], [3, 3], [4, 4], [4, 7], [3, 8], [4, 9]], "#");
+    else if (mood === "up") set([[3, 3], [3, 8]], "e");
+    else if (mood === "back") set([[6, 6]], "o");
+    else { set([[4, 3], [4, 8]], "e"); if (mood === "wide") set([[6, 5], [6, 7]], "#"); }
+    var col = { "#": "var(--pet-line)", o: cf.fur, p: cf.patc, e: glow || cf.eye, b: cf.bow, w: cf.socks }, s = "";
+    for (var y = 0; y < g.length; y++) for (var x = 0; x < g[y].length; x++) { var f = col[g[y][x]]; if (f) s += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + f + '"/>'; }
+    return '<svg width="' + 14 * px + '" height="' + 12 * px + '" viewBox="0 0 14 12" aria-hidden="true">' + s + "</svg>";
+  }
+  var TAIL = ["  ##", " #o#", " #o#", "#o# ", "#o# ", "### "];
+  function tailSvg(px, fur) {
+    var s = "";
+    TAIL.forEach(function (r, y) { for (var x = 0; x < 4; x++) { var c = r.charAt(x); if (c !== " ") s += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + (c === "#" ? "var(--pet-line)" : fur) + '"/>'; } });
+    return '<svg width="' + 4 * px + '" height="' + 6 * px + '" viewBox="0 0 4 6" aria-hidden="true">' + s + "</svg>";
+  }
+  function catBox(px, cf, mood, glow) {
+    var b = document.createElement("div"); b.className = "cbox"; b.style.cssText = "position:relative;width:" + 14 * px + "px;height:" + 12 * px + "px";
+    var body = document.createElement("div"); body.className = "cbody";
+    var tail = document.createElement("div"); tail.className = "ctail"; tail.style.left = 12 * px + "px"; tail.style.top = 5 * px + "px"; tail.innerHTML = tailSvg(px, cf.fur);
+    b.appendChild(body); b.appendChild(tail);
+    b.setMood = function (m, gl) { body.innerHTML = catSvg(px, cf, m, gl); };
+    b.setMood(mood, glow);
+    return b;
+  }
+  /* 屏幕角落的那只小猫：会犯困、会炸毛、会生气、会高兴 */
+  var res = null, lastAct = Date.now();
+  function resSay(t, ms) {
+    if (!res) return; clearTimeout(res.bt); res.bub.textContent = t; res.bub.classList.add("show");
+    if (ms) res.bt = setTimeout(function () { res.bub.classList.remove("show"); }, ms);
+  }
+  function resSet(m) { if (!res) return; res.mood = m; res.box.setMood(m); res.el.className = "rescat " + m; }
+  function catMood(kind) {
+    if (!res) return;
+    if (kind === "sulk") { res.lock = true; resSet("back"); resSay("哼……", 0); sfxMeow("hm"); }
+    else if (kind === "happy") { res.lock = true; resSet("happy"); resSay("喵～💗", 0); sfxMeow("happy"); }
+  }
+  function resWake() {
+    if (!res || res.lock || res.mood !== "sleep") return;
+    res.wokeAt = Date.now(); sfxMeow("ask"); resSet("open"); res.el.classList.add("hop"); resSay("喵？", 1200); setTimeout(function () { if (res) res.el.classList.remove("hop"); }, 450);
+  }
+  function spawnResident(vw, vh) {
+    res = null;
+    var u = Math.max(4, Math.min(7, Math.round(vw / 70)));
+    var el = document.createElement("div"); el.className = "rescat open";
+    el.style.left = "12px"; el.style.top = Math.max(60, vh - 12 * u - 56) + "px";
+    var box = catBox(u, catCfg("a"), "open"), bub = document.createElement("div"); bub.className = "cbub";
+    el.appendChild(box); el.appendChild(bub); stage.appendChild(el);
+    res = { el: el, box: box, bub: bub, mood: "open", lock: false, bt: 0 };
+    el.addEventListener("pointerdown", function (e) {
+      e.stopPropagation(); lastAct = Date.now();
+      if (res.lock || Date.now() - (res.wokeAt || 0) < 300) return;
+      if (res.mood === "sleep") { resWake(); return; }
+      resSet("wide"); el.classList.add("fluff"); resSay("喵!", 900); sfxMeow("short");
+      setTimeout(function () { if (res && !res.lock) { resSet("open"); } }, 700);
+    });
+  }
+  ["pointerdown", "pointermove", "keydown"].forEach(function (ev) { document.addEventListener(ev, function () { lastAct = Date.now(); resWake(); }, true); });
+  setInterval(function () {
+    if (res && !res.lock && res.mood === "open" && Date.now() - lastAct > 8000) { resSet("sleep"); resSay("z z z", 0); sfxMeow("snore"); }
+  }, 1000);
+
+  /* ---- 小猫配音：用合成器捏出来的“喵” ---- */
+  /* 声带（锯齿波 + 轻微颤音）经过三个并联的“共振峰”，共振峰从 mee → aa → oow 滑动，就是“喵”的口型变化 */
+  var VOW = { mee: [420, 2400, 3300], aa: [900, 1600, 2800], oow: [520, 1000, 2600], nas: [330, 1100, 2500], ee: [520, 2200, 3100] };
+  function meowVoice(pts, dur, vol, vowels, k, delay) {
+    var t = AC.currentTime + (delay || 0), o = AC.createOscillator(), lfo = AC.createOscillator(), lg = AC.createGain(), out = AC.createGain();
+    o.type = "sawtooth";
+    pts.forEach(function (p, i) { var fr = p[1] * k; if (i) o.frequency.linearRampToValueAtTime(fr, t + p[0]); else o.frequency.setValueAtTime(fr, t); });
+    lfo.frequency.value = 6; lg.gain.value = 14 * k; lfo.connect(lg); lg.connect(o.frequency);
+    [1, 0.7, 0.35].forEach(function (gain, n) {
+      var f = AC.createBiquadFilter(), g = AC.createGain(), v = vowels;
+      f.type = "bandpass"; f.Q.value = 7 + n * 2; g.gain.value = gain * 2.2;
+      f.frequency.setValueAtTime(VOW[v[0]][n], t);
+      for (var i = 1; i < v.length; i++) f.frequency.linearRampToValueAtTime(VOW[v[i]][n], t + dur * i / (v.length - 1));
+      o.connect(f); f.connect(g); g.connect(out);
+    });
+    out.gain.setValueAtTime(0.0001, t); out.gain.linearRampToValueAtTime(vol, t + 0.05); out.gain.setValueAtTime(vol, t + dur * 0.55); out.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    out.connect(master); o.start(t); lfo.start(t); o.stop(t + dur + 0.05); lfo.stop(t + dur + 0.05);
+  }
+  var meowBuf = [], meowLoad = false, meowN = 0;
+  function loadMeows() {
+    var M = window.MEOWS; if (meowLoad || !AC || !M) return; meowLoad = true;
+    M.clips.forEach(function (uri, i) {
+      try {
+        var bin = atob(uri.split(",")[1]), u8 = new Uint8Array(bin.length);
+        for (var k = 0; k < bin.length; k++) u8[k] = bin.charCodeAt(k);
+        AC.decodeAudioData(u8.buffer, function (b) { meowBuf[i] = b; }, function () {});
+      } catch (e) {}
+    });
+  }
+  function anyClip(i) { var n = window.MEOWS.clips.length; for (var k = 0; k < n; k++) { var j = (i + k) % n; if (meowBuf[j]) return j; } return -1; }
+  function playClip(i, rate, vol, delay, maxDur) {
+    var b = meowBuf[i]; if (!b) return;
+    var t = AC.currentTime + (delay || 0), s = AC.createBufferSource(), g = AC.createGain(), len = Math.min(b.duration, maxDur || b.duration) / rate;
+    s.buffer = b; s.playbackRate.value = rate;
+    g.gain.setValueAtTime(vol, t); g.gain.setValueAtTime(vol, t + Math.max(0, len - 0.09)); g.gain.linearRampToValueAtTime(0.0001, t + len);
+    s.connect(g); g.connect(master); s.start(t); s.stop(t + len + 0.03);
+  }
+  function sfxMeow(kind, semi) {
+    if (!soundOn || !AC || !state.catVoice) return;
+    var M = window.MEOWS;
+    if (M) { /* 真猫录音：不同窗口轮流用不同的一声，再按 semi 微调音高 */
+      if (!meowBuf.some(Boolean)) return;
+      var r0 = Math.pow(2, (semi || 0) * 0.35 / 12);
+      if (kind === "short") playClip(anyClip(meowN++), 1.3 * r0, 0.9, 0, 0.36);
+      else if (kind === "ask") playClip(anyClip(M.ask), 1, 0.85);
+      else if (kind === "hm") playClip(anyClip(M.low), 0.72, 0.65, 0, 0.55);
+      else if (kind === "happy") { playClip(anyClip(meowN++), 1.15 * r0, 0.85, 0, 0.45); playClip(anyClip(meowN++), 1.25 * r0, 0.85, 0.3, 0.45); }
+      else if (kind !== "snore") playClip(anyClip(meowN++), r0, 0.9);
+      return;
+    }
+    var k = Math.pow(2, (semi || 0) / 12);
+    if (kind === "short") meowVoice([[0, 600], [0.06, 880], [0.2, 640]], 0.22, 0.5, ["ee", "aa", "aa"], k);
+    else if (kind === "ask") meowVoice([[0, 430], [0.18, 560], [0.36, 820]], 0.4, 0.45, ["mee", "aa"], k);
+    else if (kind === "hm") meowVoice([[0, 330], [0.3, 260]], 0.36, 0.35, ["nas", "nas"], k);
+    else if (kind === "happy") { meowVoice([[0, 560], [0.1, 860], [0.24, 700]], 0.28, 0.45, ["mee", "aa", "oow"], k); meowVoice([[0, 620], [0.1, 940], [0.26, 760]], 0.3, 0.45, ["mee", "aa", "oow"], k, 0.26); }
+    else if (kind !== "snore") meowVoice([[0, 470], [0.14, 760], [0.3, 840], [0.58, 520]], 0.62, 0.5, ["mee", "aa", "oow"], k);
+  }
+
+  /* ---- 逗猫棒：压轴前的小游戏，手指变成逗猫棒，逗到小猫 4 次它才叼来礼物盒 ---- */
+  var wandAbort = null;
+  function wandGame(done) {
+    var vw = window.innerWidth, vh = window.innerHeight, u = Math.max(5, Math.min(8, Math.round(vw / 60))), N = 4;
+    var ov = document.createElement("div"); ov.className = "wandgame";
+    ov.innerHTML = '<div class="wg-hint">用手指逗逗它 🐾</div><div class="wg-hearts"></div><div class="wg-stick"></div><div class="wg-tip"></div><div class="wg-cat"><div class="wg-jump"><div class="wg-flip"></div></div><div class="cbub"></div></div><button type="button" class="wg-skip">跳过</button>';
+    var q = function (s) { return ov.querySelector(s); }, hint = q(".wg-hint"), hearts = q(".wg-hearts"), stick = q(".wg-stick"), tip = q(".wg-tip"), cat = q(".wg-cat"), flip = q(".wg-flip"), bub = q(".cbub");
+    sfxMeow("ask");
+    var box = catBox(u, catCfg("a"), "open"); flip.appendChild(box);
+    tip.innerHTML = sprite("heart", 6, "--pet-a");
+    var wx = vw / 2, wy = vh * 0.38, cx = vw * 0.2, cy = vh * 0.72, catches = 0, cool = 0, ended = false, raf = 0, last = performance.now(), t0 = last, dir = 1;
+    function paint() { hearts.textContent = "♥".repeat(catches) + "♡".repeat(N - catches); }
+    paint();
+    if (res) res.el.style.visibility = "hidden";
+    document.body.appendChild(ov);
+    function move(e) { wx = e.clientX; wy = e.clientY; }
+    ov.addEventListener("pointermove", move); ov.addEventListener("pointerdown", move);
+    function finish(mode) {
+      if (ended) return; ended = true; cancelAnimationFrame(raf); wandAbort = null;
+      hint.textContent = mode === "win" ? "抓到啦～" : mode === "skip" ? "好吧，直接开盒～" : "它玩累了……";
+      box.setMood("happy"); tip.classList.add("hide");
+      if (mode === "win") { bub.textContent = "喵～💗"; bub.classList.add("show"); sfxMeow("happy"); }
+      setTimeout(function () { ov.classList.add("off"); setTimeout(function () { ov.remove(); if (res) res.el.style.visibility = ""; done(); }, 420); }, mode === "win" ? 900 : 500);
+    }
+    wandAbort = function () { if (ended) return; ended = true; cancelAnimationFrame(raf); wandAbort = null; ov.remove(); if (res) res.el.style.visibility = ""; };
+    q(".wg-skip").addEventListener("click", function (e) { e.stopPropagation(); finish("skip"); });
+    function frame(now) {
+      raf = requestAnimationFrame(frame);
+      var dt = Math.min(0.05, (now - last) / 1000); last = now;
+      var dx = wx - cx, dy = wy - cy, dist = Math.hypot(dx, dy), step = Math.min((150 + catches * 70) * dt, dist);
+      if (dist > 4) { cx += dx / dist * step; cy += dy / dist * step; }
+      if (Math.abs(dx) > 6) dir = dx < 0 ? -1 : 1;
+      flip.style.transform = dir < 0 ? "scaleX(-1)" : "";
+      cat.classList.toggle("moving", dist > 12);
+      cat.style.transform = "translate(" + (cx - 7 * u) + "px," + (cy - 6 * u) + "px)";
+      stick.style.transform = "translate(" + wx + "px," + wy + "px) rotate(-28deg)";
+      tip.style.transform = "translate(" + (wx - 21) + "px," + (wy - 18) + "px)";
+      if (dist < u * 6 && now > cool && !ended) {
+        catches++; cool = now + 1000; paint();
+        box.setMood("wide"); cat.classList.add("pounce"); bub.textContent = "喵!"; bub.classList.add("show"); tip.classList.add("hide");
+        hint.textContent = catches < N ? "再逗一下！" : ""; sfxMeow("short", catches * 2);
+        setTimeout(function () { if (ended) return; box.setMood("open"); cat.classList.remove("pounce"); bub.classList.remove("show"); tip.classList.remove("hide"); }, 600);
+        if (catches >= N) finish("win");
+      }
+      if (now - t0 > 25000) finish("tired");
+    }
+    raf = requestAnimationFrame(frame);
+  }
+
+  /* ---- 猜纸箱：小猫钻进其中一个纸箱，三个纸箱来回换位，猜对了它才送礼物盒 ---- */
+  var BOX_LINES = ["这里只有灰尘……", "里面是一根逗猫棒", "空的！连猫毛都没有", "只有一团空气"];
+  function boxGame(done) {
+    var vw = window.innerWidth, vh = window.innerHeight, u = Math.max(5, Math.min(8, Math.round(vw / 60))), bw = 14 * u, bh = 10 * u, by = vh * 0.55;
+    var ov = document.createElement("div"); ov.className = "wandgame boxgame";
+    ov.innerHTML = '<div class="wg-hint">小猫藏进了其中一个纸箱……</div><button type="button" class="wg-skip">跳过</button>';
+    var hint = ov.querySelector(".wg-hint"), tms = [], ended = false, canPick = false, lines = BOX_LINES.slice(), wrong = 0;
+    var slotX = [0.2, 0.5, 0.8].map(function (r) { return r * vw - bw / 2; });
+    var order = [0, 1, 2].map(function (i) {
+      var b = document.createElement("div"); b.className = "carton";
+      b.style.cssText = "left:" + slotX[i] + "px;top:" + by + "px;width:" + bw + "px;height:" + bh + "px";
+      b.innerHTML = sprite("carton", u, "--carton"); ov.appendChild(b); return b;
+    });
+    var boxes = order.slice();
+    var catEl = document.createElement("div"); catEl.className = "bg-cat"; var cb = catBox(u, catCfg("a"), "open"), bub = document.createElement("div"); bub.className = "cbub";
+    catEl.appendChild(cb); catEl.appendChild(bub);
+    catEl.style.left = (vw / 2 - 7 * u) + "px"; catEl.style.top = Math.max(90, by - 12 * u - 90) + "px"; ov.appendChild(catEl);
+    if (res) res.el.style.visibility = "hidden";
+    document.body.appendChild(ov);
+    var target = Math.floor(Math.random() * 3), catBoxEl = boxes[target];
+    function later(fn, ms) { tms.push(setTimeout(function () { if (!ended) fn(); }, ms)); }
+    function finish(mode) {
+      if (ended) return; ended = true; tms.forEach(clearTimeout); wandAbort = null;
+      ov.classList.add("off");
+      setTimeout(function () { ov.remove(); if (res) res.el.style.visibility = ""; done(); }, 420);
+    }
+    wandAbort = function () { if (ended) return; ended = true; tms.forEach(clearTimeout); wandAbort = null; ov.remove(); if (res) res.el.style.visibility = ""; };
+    ov.querySelector(".wg-skip").addEventListener("click", function () { finish("skip"); });
+    /* 1) 小猫跳进纸箱 */
+    sfxMeow("ask");
+    later(function () { catEl.style.transition = "left .6s ease-in-out, top .6s ease-in, opacity .2s"; catEl.style.left = (slotX[target] + bw / 2 - 7 * u) + "px"; catEl.style.top = (by + bh / 2 - 6 * u) + "px"; }, 700);
+    later(function () { catEl.style.opacity = "0"; catBoxEl.classList.add("wiggle"); sfxMeow("short"); }, 1350);
+    /* 2) 纸箱来回换位 */
+    later(function () { hint.textContent = "盯紧它！"; }, 1900);
+    var swaps = 6;
+    for (var s = 0; s < swaps; s++) (function (s) {
+      later(function () {
+        var i = Math.floor(Math.random() * 3), j = (i + 1 + Math.floor(Math.random() * 2)) % 3, a = order[i], b = order[j];
+        order[i] = b; order[j] = a;
+        b.style.left = slotX[i] + "px"; a.style.left = slotX[j] + "px"; a.style.top = (by - 28) + "px"; b.style.top = (by + 14) + "px";
+        tms.push(setTimeout(function () { a.style.top = by + "px"; b.style.top = by + "px"; }, 230));
+      }, 2300 + s * 560);
+    })(s);
+    /* 3) 开始猜 */
+    later(function () {
+      hint.textContent = "猜猜小猫在哪个纸箱里？"; canPick = true;
+      boxes.forEach(function (b) { b.classList.add("pick"); });
+    }, 2300 + swaps * 560 + 300);
+    boxes.forEach(function (b) {
+      b.addEventListener("click", function () {
+        if (!canPick || b._open) return; b._open = true; b.classList.remove("pick");
+        if (b === catBoxEl) { /* 猜对：小猫探出头 */
+          canPick = false; boxes.forEach(function (x) { x.classList.remove("pick"); });
+          catEl.style.transition = "top .3s ease-out, opacity .15s"; catEl.style.opacity = "1"; catEl.style.zIndex = 3;
+          catEl.style.left = (parseFloat(b.style.left) + bw / 2 - 7 * u) + "px"; catEl.style.top = (by - 8 * u) + "px";
+          cb.setMood("happy"); bub.textContent = "喵～💗"; bub.classList.add("show"); hint.textContent = "找到啦！"; sfxMeow("happy");
+          b.classList.add("wiggle"); later(function () { finish("win"); }, 1300);
+        } else { /* 猜错：箱子里只有搞笑的东西 */
+          wrong++; b.classList.add("empty"); hint.textContent = "不是这个，再猜猜！"; sfxMeow("ask", -3);
+          var t = document.createElement("div"); t.className = "cbub show"; t.textContent = lines.splice(Math.floor(Math.random() * lines.length), 1)[0] || "空的"; b.appendChild(t);
+        }
+      });
+    });
+  }
+
   /* ---- 小猫送信：每个窗口由小猫叼着信送来，压轴是一个会抖的礼物盒 ---- */
   function catOn() { return state.cats && !reduce && !!document.documentElement.animate; }
-  function catDeliver(cx, cy, kind, done) {
+  function catDeliver(cx, cy, kind, done, idx) {
     var vw = stage.clientWidth, vh = stage.clientHeight, u = Math.max(4, Math.min(7, Math.round(vw / 70)));
     var cw = 14 * u, ch = 12 * u, dir = Math.random() < 0.5 ? 1 : -1;
     var x0 = dir > 0 ? -cw - 12 : vw + 12, x1 = cx - cw / 2, x2 = dir > 0 ? vw + 12 : -cw - 12;
     var cat = document.createElement("div"); cat.className = "mailcat"; cat.style.top = Math.max(4, Math.min(vh - ch - 4, cy - ch / 2)) + "px";
     var flip = document.createElement("div"); if (dir < 0) flip.style.transform = "scaleX(-1)";
     var bob = document.createElement("div"); bob.className = "mc-bob";
-    bob.innerHTML = sprite("cat", u, "--pet-" + "abc".charAt(Math.floor(Math.random() * 3)));
+    bob.appendChild(catBox(u, catCfg("abc".charAt(Math.floor(Math.random() * 3))), "open"));
     var item = document.createElement("div"); item.className = "mc-item";
     if (kind === "box") { item.innerHTML = sprite("box", u, "--pet-a"); item.style.left = (cw - 9 * u) / 2 + "px"; item.style.top = (-8 * u) + "px"; }
     else { item.innerHTML = sprite("letter", u, "--pet-b"); item.style.right = (-5 * u) + "px"; item.style.bottom = (1.5 * u) + "px"; }
@@ -503,6 +766,7 @@
     var a1 = walk(x0, x1, Math.max(500, Math.min(1200, Math.abs(x1 - x0) / 0.55)), "ease-out");
     a1.onfinish = function () {
       item.style.display = "none";
+      sfxMeow(kind === "box" ? "happy" : "meow", [0, 2, 4, 7, 9][(idx || 0) % 5]);
       var a2 = walk(x1, x2, Math.max(600, Math.min(1300, Math.abs(x2 - x1) / 0.5)), "ease-in");
       a2.onfinish = function () { cat.remove(); };
       if (kind === "box") {
@@ -510,6 +774,342 @@
         g.style.left = (cx - 4.5 * (u + 1)) + "px"; g.style.top = (cy - 4 * (u + 1)) + "px"; stage.appendChild(g);
         setTimeout(function () { g.remove(); done(); }, 800);
       } else done();
+    };
+  }
+
+  /* ---- 小猫打翻东西：小猫跳上桌子，把窗口一个个推下去，窗口带着重量摔在地上 ---- */
+  var kn = null;
+  /* 闷响：一记下坠的低频正弦 + 一小撮低通噪声；窗口越大越沉 */
+  function sfxThud(m, v) {
+    if (!soundOn || !AC) return;
+    var t = AC.currentTime, vol = Math.min(0.55, (0.14 + m * 0.12) * v);
+    var o = AC.createOscillator(), g = AC.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(150 - m * 22, t); o.frequency.exponentialRampToValueAtTime(38, t + 0.2);
+    g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.3);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + 0.32);
+    var n = Math.floor(AC.sampleRate * 0.14), buf = AC.createBuffer(1, n, AC.sampleRate), d = buf.getChannelData(0);
+    for (var i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3);
+    var s = AC.createBufferSource(), f = AC.createBiquadFilter(), g2 = AC.createGain();
+    s.buffer = buf; f.type = "lowpass"; f.frequency.value = 500 + m * 100; g2.gain.value = vol * 0.9;
+    s.connect(f); f.connect(g2); g2.connect(master); s.start(t);
+  }
+  function sfxCrack() {
+    if (!soundOn || !AC) return;
+    var t = AC.currentTime; tone(2600, t, 0.05, 0.05, "square"); tone(1700, t + 0.04, 0.07, 0.04, "square"); tone(3400, t + 0.09, 0.04, 0.03, "square");
+  }
+  function knockHalt() { if (kn && !kn.finished) { kn.cleanup(); kn.abort(); } }
+  function knockRerun() {
+    if (!catOn() || !state.knock || (kn && !kn.finished) || !stage.querySelector(".win.knocked:not(.fin)")) return;
+    knockStart(stage.clientWidth, stage.clientHeight, 0, runTok, { loop: true });
+  }
+  /* 推窗口的队列全部落地、小猫离开之后再继续后面的（压轴、拼图、署名） */
+  function knockWhenDone(cb) { if (kn && !kn.finished) kn.waiters.push(cb); else cb(); }
+  function knockAdd(it) { if (kn) { kn.q.push(it); kn.pump(); } }
+  function knockStart(vw, vh, total, tok, opt) {
+    opt = opt || {};
+    var u = Math.max(4, Math.min(7, Math.round(vw / 70))), cw = 14 * u, ch = 12 * u;
+    var surfY = ch + 34, slab = Math.round(u * 2.4), legH = Math.round(u * 9), G = 2600, S0 = 0.42;
+    var me = kn = { q: [], busy: false, ready: false, finished: false, dead: false, leaving: false, waiters: [], total: total, done: 0, flying: 0, loop: !!opt.loop, round: 0 };
+    function alive() { return kn === me && !me.dead && tok === runTok; }
+    /* 被打断（点了「愿意」）：把空中的窗口原地放回去，收走桌子和小猫 */
+    me.cleanup = function () {
+      cat.remove(); table.remove();
+      Array.prototype.forEach.call(stage.querySelectorAll(".win"), function (o) {
+        if (!o._air) return;
+        o._air = false; o.style.transform = ""; o.style.pointerEvents = ""; o.style.animation = ""; o.style.visibility = ""; o.classList.add("knocked");
+      });
+      Array.prototype.forEach.call(stage.querySelectorAll(".kshadow,.kdust,.kshard"), function (n) { n.remove(); });
+    };
+    function collect() {
+      return Array.prototype.map.call(stage.querySelectorAll(".win.knocked:not(.fin)"), function (el, i) {
+        return { el: el, w: el.offsetWidth, h: el.offsetHeight, tx: el.offsetLeft, ty: el.offsetTop, idx: i, pull: true, land: function () {} };
+      }).filter(function (it) { return !it.el._air; });
+    }
+    function topFin() { var f = stage.querySelector(".win.fin"); if (f) bring(f); } /* 压轴始终在最上面，「愿意」才点得到 */
+    me.abort = function () { me.dead = true; me.finished = true; me.waiters = []; };
+
+    var table = document.createElement("div"); table.className = "ktable";
+    table.style.cssText = "top:" + surfY + "px;--sl:" + slab + "px;--lh:" + legH + "px;--lw:" + Math.round(u * 2.4) + "px;--ty:" + (surfY + slab + legH + 20) + "px";
+    table.innerHTML = '<div class="ktop"></div><i class="kleg l"></i><i class="kleg r"></i>';
+    stage.appendChild(table);
+    var cat = document.createElement("div"); cat.className = "kcat"; cat.style.top = (surfY - ch + 2) + "px";
+    var flip = document.createElement("div"), hop = document.createElement("div"), bub = document.createElement("div");
+    hop.style.transformOrigin = "50% 100%"; bub.className = "cbub";
+    var box = catBox(u, catCfg("b"), "open"); hop.appendChild(box); flip.appendChild(hop); cat.appendChild(flip); cat.appendChild(bub);
+    var cx = -cw - 40, bt = 0;
+    function setX(x) { cx = x; cat.style.transform = "translateX(" + x + "px)"; }
+    function face(d) { flip.style.transform = d < 0 ? "scaleX(-1)" : ""; }
+    function say(t, ms) { clearTimeout(bt); bub.textContent = t; bub.classList.add("show"); bt = setTimeout(function () { bub.classList.remove("show"); }, ms || 800); }
+    setX(cx); stage.appendChild(cat);
+
+    function tween(ms, fn, cb) {
+      var t0 = 0;
+      (function f(ts) {
+        if (!alive()) return;
+        if (!t0) t0 = ts;
+        var p = Math.min(1, (ts - t0) / ms); fn(p);
+        if (p < 1) requestAnimationFrame(f); else if (cb) cb();
+      })(performance.now());
+    }
+    function walk(x, cb) {
+      var d = x - cx; if (Math.abs(d) < 3) { cb(); return; }
+      face(d); hop.className = "mc-bob";
+      var a = cat.animate([{ transform: "translateX(" + cx + "px)" }, { transform: "translateX(" + x + "px)" }], { duration: Math.max(120, Math.abs(d) / 0.55), easing: "ease-in-out", fill: "forwards" });
+      a.onfinish = function () { if (!alive()) return; setX(x); a.cancel(); hop.className = ""; cb(); };
+    }
+    /* 从屏幕外一跃，落在桌面上 */
+    function leap(x0, x1, y0, y1, cb) {
+      var mid = (x0 + x1) / 2, a = cat.animate([
+        { transform: "translate(" + x0 + "px," + y0 + "px)", offset: 0, easing: "ease-out" },
+        { transform: "translate(" + mid + "px," + (-5 * u) + "px)", offset: 0.5, easing: "ease-in" },
+        { transform: "translate(" + x1 + "px," + y1 + "px)", offset: 1 }], { duration: 720, fill: "forwards" });
+      a.onfinish = function () { if (!alive()) return; if (y1 === 0) { setX(x1); a.cancel(); } cb(); };
+    }
+
+    function swat() { hop.animate([{ transform: "translateX(0)" }, { transform: "translateX(" + 1.6 * u + "px) scale(1.05)" }, { transform: "translateX(0)" }], { duration: 220, easing: "ease-out" }); }
+    function shake(a) {
+      try { stage.animate([{ translate: "0 0" }, { translate: "0 " + a + "px" }, { translate: "0 " + (-a * 0.6) + "px" }, { translate: a * 0.4 + "px 0" }, { translate: "0 0" }], { duration: 260, easing: "ease-out" }); } catch (er) {}
+    }
+
+    /* ---- 桌上的摆件：小猫先把它们一个个拍下去，摔成像素碎片 ---- */
+    var PAL = { o: "#4a3a4f", c: "#8b5a3c", w: "#fff8ee", p: "#ff9fb5", g: "#4fae6b", b: "#d9794a", s: "#6b4a33" };
+    var PROPS = [
+      { rows: ["oooooo..", "occcco..", "owwwwooo", "owppwo.o", "owwwwooo", "owwwwo..", ".oooo..."], bits: ["#fff8ee", "#ff9fb5", "#8b5a3c", "#4a3a4f"] },
+      { rows: ["..g.g..", ".ggggg.", "gg.g.gg", ".ggggg.", "..ggg..", ".ooooo.", ".obbbo.", ".obbbo.", "..obo..", "..ooo.."], bits: ["#4fae6b", "#d9794a", "#6b4a33", "#6b4a33"] }
+    ];
+    var props = [];
+    (function () {
+      if (opt.loop) return;
+      var order = Math.random() < 0.5 ? [0, 1] : [1, 0], xs = [vw * (0.26 + Math.random() * 0.1), vw * (0.58 + Math.random() * 0.14)];
+      order.forEach(function (pi, k) {
+        var P = PROPS[pi], rows = P.rows, svg = "";
+        rows.forEach(function (r, y) { for (var x = 0; x < r.length; x++) { var c = PAL[r.charAt(x)]; if (c) svg += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + c + '"/>'; } });
+        var el = document.createElement("div"); el.className = "kprop"; var pw = rows[0].length * u, ph = rows.length * u;
+        el.style.cssText = "left:" + xs[k] + "px;top:" + (-ph) + "px";
+        el.innerHTML = '<svg width="' + pw + '" height="' + ph + '" viewBox="0 0 ' + rows[0].length + ' ' + rows.length + '" aria-hidden="true">' + svg + "</svg>";
+        table.appendChild(el); props.push({ el: el, x: xs[k], w: pw, h: ph, bits: P.bits });
+      });
+    })();
+    function shatter(x, y, bits) {
+      for (var k = 0; k < 14; k++) {
+        var d = document.createElement("i"); d.className = "kshard"; var sz = Math.round(u * (0.7 + Math.random() * 0.8));
+        d.style.cssText = "left:" + x + "px;top:" + y + "px;width:" + sz + "px;height:" + sz + "px;background:" + bits[k % bits.length]; stage.appendChild(d);
+        var dx = (Math.random() - 0.5) * 150, up = 30 + Math.random() * 70;
+        (function (d) { d.animate([{ transform: "translate(0,0) rotate(0)", opacity: 1 }, { transform: "translate(" + dx * 0.6 + "px," + -up + "px) rotate(" + dx + "deg)", opacity: 1, offset: 0.35 }, { transform: "translate(" + dx + "px," + (Math.random() * 14) + "px) rotate(" + dx * 2 + "deg)", opacity: 0 }], { duration: 900 + Math.random() * 500, easing: "ease-out" }).onfinish = function () { d.remove(); }; })(d);
+      }
+    }
+    function runProps(cb) {
+      var floorY = Math.max(surfY + 120, vh - 100), D = floorY - surfY;
+      (function nextProp(k) {
+        if (!alive()) return;
+        if (k >= props.length) { cb(); return; }
+        var P = props[k], dir = cx < P.x ? 1 : -1, catX = dir > 0 ? P.x - cw + 2 * u : P.x + P.w - 2 * u;
+        catX = Math.max(2, Math.min(vw - cw - 2, catX));
+        walk(catX, function () {
+          if (!alive()) return;
+          face(dir); say(k ? "再来一个～" : "嘿嘿", 700); sfxMeow("short", k * 4); swat(); box.setMood("wide");
+          setTimeout(function () {
+            if (!alive()) return; box.setMood("open");
+            var ms = Math.sqrt(2 * D / G) * 1000, x0 = P.x + P.w / 2;
+            tween(ms, function (p) {
+              var q = p * p; P.el.style.transform = "translate(" + dir * 50 * p + "px," + D * q + "px) rotate(" + dir * 300 * p + "deg) scale(" + (1 + 0.5 * p) + ")";
+            }, function () {
+              P.el.remove(); sfxThud(0.5, 0.9); shake(2.5); shatter(x0 + dir * 50, floorY, P.bits);
+              setTimeout(function () { nextProp(k + 1); }, 450);
+            });
+          }, 110);
+        });
+      })(0);
+    }
+
+    /* ---- 一个窗口：弹到桌上 → 小猫走过去 → 推（重的要先使劲）→ 摔下去 ---- */
+    function push(it, next) {
+      var el = it.el, w = it.w, h = it.h, cxT = it.tx + w / 2, cyT = it.ty + h / 2, ws = w * S0, hs = h * S0;
+      var m = Math.max(0.6, Math.min(2.3, w * h / (320 * 130))); /* “重量”：窗口越大越重 */
+      var sx = Math.max(ws / 2 + 6, Math.min(vw - ws / 2 - 6, cxT));
+      var dir = cx < sx ? 1 : -1;
+      function spot(d) { return d > 0 ? sx - ws / 2 - cw + 2 * u : sx + ws / 2 - 2 * u; }
+      var catX = spot(dir); if (catX < 2 || catX > vw - cw - 2) { dir = -dir; catX = spot(dir); }
+      catX = Math.max(2, Math.min(vw - cw - 2, catX));
+      var x0 = sx - cxT, y0 = Math.min(surfY - hs / 2 - cyT, -50), slide = dir * (16 + m * 8);
+      function pose(dx, dy, sc, r, qx, qy) {
+        el.style.transform = "translate(" + dx.toFixed(1) + "px," + (dy + h * sc * (1 - qy) / 2).toFixed(1) + "px) rotate(" + r.toFixed(2) + "deg) scale(" + (sc * qx).toFixed(3) + "," + (sc * qy).toFixed(3) + ")";
+      }
+      el._air = true; el.style.visibility = ""; el.style.pointerEvents = "none"; bring(el); topFin();
+      var pend = 2;
+      function ready() { if (--pend) return; face(dir); nudge(0); }
+      if (it.pull) { /* 小猫把摔在地上的窗口叼回桌上 */
+        pose(0, 0, 1, 0, 1, 1); sfxMeow("short");
+        tween(380, function (p) { var q = 1 - Math.pow(1 - p, 3); pose(x0 * q, y0 * q - 70 * Math.sin(p * Math.PI), 1 + (S0 - 1) * q, 0, 1, 1); }, ready);
+      } else {
+        pose(x0, y0, 0.01, 0, 1, 1);
+        tween(240, function (p) { var b = 1.70158, q = p - 1, e = 1 + (b + 1) * q * q * q + b * q * q; pose(x0, y0, S0 * e, 0, 1, 1); }, ready);
+      }
+      walk(catX, ready);
+
+      var nudges = m > 1.3 ? 1 : 0;
+      function nudge(k) {
+        if (!alive()) return;
+        if (k >= nudges) { shove(); return; }
+        say("嘿咻…", 700); sfxMeow("hm"); swat();
+        tween(340, function (p) { var a = Math.sin(p * Math.PI); pose(x0 + dir * 5 * a, y0, S0, dir * 2 * a, 1, 1); }, function () { setTimeout(function () { nudge(k + 1); }, 140); });
+      }
+      function shove() {
+        if (!alive()) return;
+        sfxMeow("short", [0, 2, 4, 7, 9][(it.idx || 0) % 5]); swat(); box.setMood("wide");
+        setTimeout(function () { if (alive()) box.setMood("open"); }, 650);
+        setTimeout(function () {
+          tween(240, function (p) { pose(x0 + slide * p * p, y0, S0, dir * (4 + m * 2) * p, 1, 1); }, fall);
+        }, 90);
+      }
+
+      function fall() {
+        if (!alive()) return;
+        me.flying++; next();
+        var dx0 = x0 + slide, dyS = y0, tf = Math.sqrt(2 * -dyS / G), r0 = dir * (4 + m * 2), spin = dir * (10 + m * 4);
+        var e = Math.max(0.12, 0.34 - m * 0.09), vy = 0, dy = dyS, t = 0, last = 0, imp = 0, tLast = 0, sqA = 0;
+        var sh = document.createElement("i"); sh.className = "kshadow";
+        sh.style.cssText = "left:" + (it.tx + w * 0.05) + "px;top:" + (it.ty + h - 9) + "px;width:" + w * 0.9 + "px;height:18px;opacity:0";
+        stage.appendChild(sh);
+        function puff(x, side, sz) {
+          var d = document.createElement("i"); d.className = "kdust";
+          d.style.cssText = "left:" + x + "px;top:" + (it.ty + h - 6) + "px;width:" + sz + "px;height:" + sz + "px"; stage.appendChild(d);
+          var a = d.animate([{ transform: "translate(-50%,-50%) scale(.4)", opacity: 0.75 },
+            { transform: "translate(calc(-50% + " + side * (18 + Math.random() * 34) + "px),calc(-50% - " + (6 + Math.random() * 16) + "px)) scale(1.5)", opacity: 0 }], { duration: 450 + Math.random() * 250, easing: "ease-out" });
+          a.onfinish = function () { d.remove(); };
+        }
+        function impact(vi, first) {
+          sfxThud(m, Math.min(1, vi / 1900) * (first ? 1 : 0.55));
+          if (!first) return;
+          shake(1.5 + m * Math.min(1, vi / 1700) * 3.5); chain(vi);
+          var n = 3 + Math.round(m * 2);
+          for (var k = 0; k < n; k++) { var side = k % 2 ? 1 : -1; puff(cxT + side * w * (0.2 + Math.random() * 0.28), side, 9 + Math.random() * 7 * m); }
+          if (m > 1.2) resWake();
+        }
+        /* 连锁反应：已经落地的邻居被震得跳一下、歪一歪；被重窗口压在下面的会裂开 */
+        function chain(vi) {
+          var wins = stage.querySelectorAll(".win.knocked"), pw = Math.min(1, vi / 1700);
+          Array.prototype.forEach.call(wins, function (o) {
+            if (o === el || o._air) return;
+            var ow = o.offsetWidth, oh = o.offsetHeight, dxo = o.offsetLeft + ow / 2 - cxT, dyo = o.offsetTop + oh / 2 - cyT;
+            var R = (w + ow) / 2 * 1.1 + 40, k = (1 - Math.hypot(dxo, dyo) / R) * m * pw;
+            if (k < 0.08) return;
+            var sg = dxo < 0 ? -1 : 1;
+            try { o.animate([{ transform: "none" }, { transform: "translate(" + sg * k * 7 + "px," + -k * 9 + "px) rotate(" + sg * k * 2.2 + "deg)", offset: 0.3 }, { transform: "translate(" + -sg * k * 2 + "px," + k * 2 + "px) rotate(" + -sg * k * 0.8 + "deg)", offset: 0.65 }, { transform: "none" }], { duration: 420, easing: "ease-out" }); } catch (er) {}
+            var ovx = (w + ow) / 2 - Math.abs(dxo), ovy = (h + oh) / 2 - Math.abs(dyo);
+            if (m >= 1 && !o._crack && ovx > 0 && ovy > 0 && ovx * ovy > 0.2 * Math.min(w * h, ow * oh)) crack(o, dxo > 0, dyo > 0);
+          });
+        }
+        function crack(o, left, top) {
+          o._crack = true;
+          var c = document.createElement("div"); c.className = "kcrack"; c.setAttribute("aria-hidden", "true");
+          c.style.cssText = (left ? "left" : "right") + ":0;" + (top ? "top" : "bottom") + ":0;transform:scale(" + (left ? 1 : -1) + "," + (top ? 1 : -1) + ")";
+          c.innerHTML = '<svg viewBox="0 0 40 40" width="100%" height="100%"><path d="M0 0 L14 9 L11 20 L26 28 L24 40 M14 9 L31 6 L40 11 M11 20 L3 33" fill="none" stroke="rgba(255,255,255,.8)" stroke-width="3.2" stroke-linejoin="round"/><path d="M0 0 L14 9 L11 20 L26 28 L24 40 M14 9 L31 6 L40 11 M11 20 L3 33" fill="none" stroke="rgba(60,45,75,.6)" stroke-width="1.4" stroke-linejoin="round"/></svg>';
+          o.appendChild(c); sfxCrack();
+        }
+        function finish() {
+          el.style.transform = ""; el.style.pointerEvents = ""; el.classList.add("knocked"); el.style.animation = "";
+          sh.style.opacity = "0"; setTimeout(function () { sh.remove(); }, 350);
+          el._air = false; me.flying--; it.land(); check();
+        }
+        function frame(ts) {
+          if (!alive() || !el.isConnected) { sh.remove(); return; }
+          var dt = last ? Math.min(0.034, (ts - last) / 1000) : 0.016; last = ts; t += dt;
+          if (!(imp && dy === 0 && vy === 0)) {
+            vy += G * dt; dy += vy * dt;
+            if (dy >= 0 && vy > 0) {
+              var vi = vy; dy = 0; imp++; tLast = t; sqA = Math.min(0.17, vi / 11000);
+              impact(vi, imp === 1);
+              vy = vi * e > 140 && imp < 4 ? -vi * e : 0;
+            }
+          }
+          if (imp && dy === 0 && vy === 0 && t - tLast > 0.55) { finish(); return; }
+          var fr = imp ? 1 : Math.max(0, Math.min(1, (dy - dyS) / -dyS)), p = Math.min(1, t / tf), tau = t - tLast;
+          var dxn = imp ? 0 : dx0 * (1 - p), sc = S0 + (1 - S0) * fr;
+          var r = imp ? dir * (1.5 + m * 1.2) * Math.exp(-tau * 5) * Math.sin(tau * 22) : r0 * (1 - fr) + spin * Math.sin(fr * Math.PI);
+          var qy = imp ? 1 - sqA * Math.exp(-tau * 9) * (0.5 + 0.5 * Math.cos(tau * 26)) : 1;
+          pose(dxn, dy, sc, r, 1 + (1 - qy) * 0.7, qy);
+          var k = Math.min(1, -dy / -dyS); sh.style.opacity = (0.3 * (1 - 0.85 * k) * Math.min(1, 0.2 + fr * 1.2)).toFixed(3); sh.style.transform = "scale(" + (1 - 0.45 * k).toFixed(3) + ")";
+          requestAnimationFrame(frame);
+        }
+        requestAnimationFrame(frame);
+      }
+    }
+
+    me.pump = function () {
+      if (me.busy || !me.ready || !me.q.length || !alive()) return;
+      me.busy = true;
+      push(me.q.shift(), function () { me.busy = false; if (!alive()) return; me.done++; if (me.q.length) me.pump(); else check(); });
+    };
+    function check() {
+      if (!alive() || me.busy || me.leaving || me.done < me.total || me.flying > 0) return;
+      if (me.loop && me.round < 4) nextRound(); else leave();
+    }
+    /* 对方还在“再想想”：小猫把窗口一个个叼回桌上，再推一遍 */
+    function nextRound() {
+      me.round++; me.leaving = true; say("再想想？重来～", 900); sfxMeow("ask");
+      setTimeout(function () {
+        if (!alive()) return;
+        var items = collect(); me.leaving = false;
+        if (!items.length) { me.loop = false; leave(); return; }
+        me.done = 0; me.total = items.length; me.q = items; me.pump();
+      }, 900);
+    }
+    function leave() {
+      me.leaving = true; box.setMood("happy"); sfxMeow("happy"); say("喵～", 900);
+      setTimeout(function () {
+        if (!alive()) return;
+        var toLeft = cx < vw / 2, x1 = toLeft ? -cw - 40 : vw + 40, mid = (cx + x1) / 2;
+        face(toLeft ? -1 : 1);
+        cat.animate([{ transform: "translate(" + cx + "px,0)", offset: 0, easing: "ease-out" }, { transform: "translate(" + mid + "px," + (-3 * u) + "px)", offset: 0.4, easing: "ease-in" }, { transform: "translate(" + x1 + "px," + 9 * u + "px)", offset: 1 }], { duration: 650, fill: "forwards" });
+        setTimeout(function () { if (alive()) table.classList.add("out"); }, 400);
+        setTimeout(function () {
+          if (!alive()) return;
+          cat.remove(); table.remove(); me.finished = true;
+          var ws = me.waiters; me.waiters = []; ws.forEach(function (fn) { fn(); });
+        }, 1050);
+      }, 700);
+    }
+
+    /* 开场：桌子从上面落下来，小猫从屏幕外一跃跳上桌子 */
+    setTimeout(function () {
+      if (!alive()) return;
+      var fromLeft = Math.random() < 0.5, x1 = fromLeft ? 14 : vw - cw - 14;
+      face(fromLeft ? 1 : -1); sfxMeow("short");
+      leap(fromLeft ? -cw - 40 : vw + 40, x1, 8 * u, 0, function () {
+        sfxThud(0.5, 0.4); hop.animate([{ transform: "scale(1.12,.86)" }, { transform: "none" }], { duration: 240, easing: "ease-out" });
+        runProps(function () {
+          if (opt.loop) { me.q = collect(); me.total = me.q.length; if (!me.q.length) { me.loop = false; me.ready = true; leave(); return; } }
+          me.ready = true; me.pump();
+        });
+      });
+    }, 450);
+  }
+
+  /* ---- 分享页签名：小猫举着写了落款的小牌子，走到屏幕中间坐好 ---- */
+  function catSign() {
+    if (!catOn() || !state.from || stage.querySelector(".signcat")) return;
+    var tok = runTok, vw = stage.clientWidth, vh = stage.clientHeight, u = Math.max(4, Math.min(7, Math.round(vw / 70))), cw = 14 * u, ch = 12 * u;
+    var wrap = document.createElement("div"); wrap.className = "signcat"; wrap.style.top = Math.max(80, vh - ch - 74) + "px"; wrap.style.setProperty("--st", Math.round(u * 1.8) + "px");
+    var flip = document.createElement("div"), box = catBox(u, catCfg("c"), "open"); flip.appendChild(box);
+    var bub = document.createElement("div"); bub.className = "cbub";
+    var sign = document.createElement("div"); sign.className = "ssign";
+    var sb = document.createElement("div"); sb.className = "sb";
+    sb.innerHTML = (state.to ? '<small></small>' : "") + "<b></b>";
+    if (state.to) sb.querySelector("small").textContent = "给 " + state.to;
+    sb.querySelector("b").textContent = "—— " + state.from; sign.appendChild(sb);
+    wrap.appendChild(flip); wrap.appendChild(sign); wrap.appendChild(bub);
+    var fromLeft = Math.random() < 0.5, x0 = fromLeft ? -cw - 40 : vw + 40, x1 = (vw - cw) / 2;
+    flip.style.transform = fromLeft ? "" : "scaleX(-1)"; sign.style.display = "none";
+    wrap.style.transform = "translateX(" + x0 + "px)"; stage.appendChild(wrap);
+    flip.className = "mc-bob"; sfxMeow("meow", 4);
+    var a = wrap.animate([{ transform: "translateX(" + x0 + "px)" }, { transform: "translateX(" + x1 + "px)" }], { duration: Math.max(700, Math.abs(x1 - x0) / 0.4), easing: "ease-out", fill: "forwards" });
+    a.onfinish = function () {
+      if (tok !== runTok) return;
+      wrap.style.transform = "translateX(" + x1 + "px)"; a.cancel();
+      flip.className = ""; flip.style.transform = ""; box.setMood("happy"); sign.style.display = ""; sfxMeow("happy");
+      bub.textContent = "喵～"; bub.classList.add("show"); setTimeout(function () { bub.classList.remove("show"); }, 1600);
+      setTimeout(function () { if (tok === runTok) box.setMood("open"); }, 5000);
     };
   }
 
@@ -548,10 +1148,29 @@
     document.body.appendChild(sky); document.body.appendChild(cv);
     var x = cv.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0);
     requestAnimationFrame(function () { sky.classList.add("on"); });
+    var fc = null, fcBox = null, lastHop = 0, scared = false, looking = false;
+    if (state.cats) {
+      var fu = Math.max(5, Math.min(9, Math.round(vw / 55)));
+      fc = document.createElement("div"); fc.className = "firecat"; fc.style.marginLeft = (-7 * fu) + "px";
+      fcBox = catBox(fu, catCfg("a"), "up", "#ffd36b"); fc.appendChild(fcBox); document.body.appendChild(fc);
+      if (res) res.el.style.visibility = "hidden";
+    }
+    function fcJump() { if (!fc) return; fc.classList.remove("jump"); void fc.offsetWidth; fc.classList.add("jump"); }
+    function fcReact(col, big) {
+      if (!fcBox || gathering) return;
+      if (big && !scared) { /* 第一发礼花：吓一跳，回头看你一眼，再抬头 */
+        scared = looking = true; fcBox.setMood("wide"); fcJump(); sfxMeow("short", 3);
+        setTimeout(function () { if (fcBox && !gathering) fcBox.setMood("open"); }, 450);
+        setTimeout(function () { looking = false; if (fcBox && !gathering) fcBox.setMood("up", col); }, 1500);
+        return;
+      }
+      if (!looking) fcBox.setMood("up", col); /* 烟花的光映进眼睛 */
+      var now = performance.now(); if (big && now - lastHop > 700) { lastHop = now; fcJump(); }
+    }
     var pal = [fxCfg().c, "#ffd36b", "#ffffff", "#ff8fb1", "#ffb3c7", "#9be7ff"], P = [], rockets = [], tms = [], raf = 0, ended = false, gathering = false, T0 = performance.now();
     function pick() { return pal[(Math.random() * pal.length) | 0]; }
     function burst(bx, by, n, sp) {
-      var c1 = pick(), c2 = pick();
+      var c1 = pick(), c2 = pick(); fcReact(c1, sp > 4);
       for (var i = 0; i < n; i++) { var a = Math.random() * 6.2832, s = sp * (0.35 + Math.random() * 0.65); P.push({ x: bx, y: by, vx: Math.cos(a) * s, vy: Math.sin(a) * s, c: Math.random() < 0.5 ? c1 : c2, sz: 2 + Math.random() * 2, a: 1, age: 0, life: 90 + Math.random() * 40 }); }
       sfxBoom();
     }
@@ -570,14 +1189,14 @@
       var T = fwTargets(text, vw, vh).sort(function () { return Math.random() - 0.5; }), now = performance.now(), live = P.filter(function (p) { return !p.g; });
       while (live.length < T.length) { var s = live[(Math.random() * live.length) | 0] || { x: vw / 2, y: vh / 2 }; var q = { x: s.x, y: s.y, vx: 0, vy: 0, c: pick(), sz: 2, a: 1, age: 0, life: 99 }; P.push(q); live.push(q); }
       live.forEach(function (p, i) { var t = T[i % T.length]; p.g = now + Math.random() * 300; p.sx = p.x; p.sy = p.y; p.tx = t.x + (i >= T.length ? Math.random() * 6 - 3 : 0); p.ty = t.y + (i >= T.length ? Math.random() * 6 - 3 : 0); p.c = t.c; p.sz = 2.4; p.a = 1; });
-      gathering = true; sfxFanfare();
+      gathering = true; sfxFanfare(); if (fcBox) { fcBox.setMood("happy"); sfxMeow("happy"); }
     }, 3600));
     tms.push(setTimeout(end, 9600));
     sky.addEventListener("click", end);
     function end() {
       if (ended) return; ended = true; tms.forEach(clearTimeout);
       sky.classList.remove("on"); cv.classList.add("off");
-      setTimeout(function () { cancelAnimationFrame(raf); sky.remove(); cv.remove(); fwOn = false; if (onEnd) onEnd(); }, 900);
+      setTimeout(function () { cancelAnimationFrame(raf); sky.remove(); cv.remove(); if (fc) fc.remove(); if (res) res.el.style.visibility = ""; fwOn = false; if (onEnd) onEnd(); }, 900);
     }
     function frame() {
       raf = requestAnimationFrame(frame);
@@ -616,15 +1235,17 @@
       yes.textContent = "愿意 💗"; no.textContent = "再想想";
       acts.appendChild(yes); acts.appendChild(no); body.appendChild(acts);
       function accept() {
-        body.textContent = "我就知道你会答应 💗";
-        if (state.fireworks && !reduce) { fireworks(text); return; }
+        body.textContent = "我就知道你会答应 💗"; catMood("happy"); knockHalt();
+        if (state.fireworks && !reduce) { fireworks(text, catSign); return; }
         var r = el.getBoundingClientRect(); fxBurst(r.left + r.width / 2, r.top + r.height / 2);
-        sfxFanfare(); beat();
+        sfxFanfare(); beat(); setTimeout(catSign, 1800);
       }
       function dodge(e) {
         if (giveUp) return;
         e.preventDefault(); e.stopPropagation();
         tries++;
+        if (tries === 2) catMood("sulk");
+        if (tries === 3) knockRerun();
         var minX = -no.offsetLeft, maxX = acts.clientWidth - no.offsetLeft - no.offsetWidth;
         no.style.transform = "translate(" + (minX + Math.random() * (maxX - minX)) + "px," + ((Math.random() - 0.5) * no.offsetHeight) + "px)";
         if (tries >= 6) { giveUp = true; no.textContent = "好吧，愿意"; no.style.transform = ""; }
@@ -643,7 +1264,7 @@
   function audioInit() {
     if (!AC) {
       var C = window.AudioContext || window.webkitAudioContext; if (!C) return false;
-      AC = new C(); master = AC.createGain(); master.connect(AC.destination);
+      AC = new C(); master = AC.createGain(); master.connect(AC.destination); loadMeows();
     }
     if (AC.state === "suspended") AC.resume();
     return true;
@@ -749,7 +1370,7 @@
     var o = document.createElement("div"); o.className = "env";
     o.innerHTML = '<p class="env-to"></p><div class="env-box"><div class="env-back"></div><div class="env-card">♥</div><div class="env-front"></div><div class="env-flap"></div><div class="env-seal">♥</div></div><p class="env-from"></p><button type="button" class="env-go-btn">点开看看</button>';
     o.querySelector(".env-to").textContent = state.to ? "给 " + state.to : "给你的一封信";
-    o.querySelector(".env-from").textContent = state.from ? "来自 " + state.from : "";
+    o.querySelector(".env-from").textContent = (state.from ? "来自 " + state.from : "") + (state.cats && state.cat.name ? (state.from ? " · " : "") + state.cat.name + " 叼来的信" : "");
     document.body.appendChild(o);
     var done = false;
     o.addEventListener("click", function () {
@@ -892,14 +1513,19 @@
   }
   function startRun(hintEl) {
     var myTok = runTok;
+    if (wandAbort) wandAbort();
+    if (kn) { kn.abort(); kn = null; }
     var vw = stage.clientWidth, vh = stage.clientHeight;
     if (state.pets) spawnPets(vw, vh);
+    res = null; if (state.cats) spawnResident(vw, vh);
     var seq = curSeq = buildSeq(), n = seq.length, fin = hasFin(), m = outlineN();
     heartMode = useHeart(m);
     curLayout = heartMode ? heartLayout(m, vw, vh) : null;
     var baseW = Math.round(Math.min(320, vw * 0.66));
     puz = null;
     if (state.puzzle && fin) setupPuzzle(seq, n, vw);
+    var knockN = fin ? n - 1 : n, knockOn = catOn() && state.knock && knockN > 0;
+    if (knockOn) knockStart(vw, vh, knockN, myTok);
     seq.forEach(function (it, i) {
       var isFin = fin && i === n - 1;
       var delay = reduce ? 0 : 250 + i * state.gap + (isFin ? 350 : 0);
@@ -919,26 +1545,41 @@
         var reveal = function () {
           if (myTok !== runTok) return;
           el.style.visibility = ""; el.style.animation = "";
-          if (isFin) sfxFanfare(); else sfxDing(i);
+          if (isFin) { bring(el); sfxFanfare(); if (!askFin && !puz) setTimeout(catSign, 1500); } else sfxDing(i); /* 压轴出现时再置顶，免得被后落地的窗口盖住 */
           if (puz && puz.cover[i] != null) addShard(puz.cover[i], el, vw, vh);
           if (it.m && it.m.kind === "voice" && state.autoVoice && el._autoplay) el._autoplay();
         };
         if (catOn()) { /* 先藏起来，等小猫把信送到再弹出 */
           el.style.visibility = "hidden"; el.style.animation = "none";
-          catDeliver(el.offsetLeft + el.offsetWidth / 2, el.offsetTop + el.offsetHeight / 2, isFin ? "box" : "letter", reveal);
+          if (knockOn && !isFin) { /* 小猫跳上桌子把它推下去，摔在原本的位置 */
+            knockAdd({ el: el, w: el.offsetWidth, h: el.offsetHeight, tx: el.offsetLeft, ty: el.offsetTop, idx: i, land: function () {
+              if (myTok !== runTok) return;
+              if (puz && puz.cover[i] != null) { zTop++; bring(el); addShard(puz.cover[i], el, vw, vh); }
+              if (it.m && it.m.kind === "voice" && state.autoVoice && el._autoplay) el._autoplay();
+            } });
+            return;
+          }
+          var go = function () { catDeliver(el.offsetLeft + el.offsetWidth / 2, el.offsetTop + el.offsetHeight / 2, isFin ? "box" : "letter", reveal, i); };
+          var pre = []; if (isFin && state.wand) pre.push(wandGame); if (isFin && state.boxgame) pre.push(boxGame);
+          knockWhenDone(function () {
+            if (myTok !== runTok) return;
+            (function next(k) { if (k >= pre.length) { if (myTok === runTok) go(); return; } pre[k](function () { if (myTok === runTok) next(k + 1); }); })(0);
+          });
         } else reveal();
       }, delay));
     });
     var lead = catOn() ? 1500 : 0;
-    if (curLayout && !reduce) timers.push(setTimeout(beat, 250 + (n - 1) * state.gap + 1300 + lead));
+    if (curLayout && !reduce) timers.push(setTimeout(function () { knockWhenDone(beat); }, 250 + (n - 1) * state.gap + 1300 + lead));
     var tEnd = reduce ? 0 : 250 + (n - 1) * state.gap + lead;
-    var signFn = function () { if (state.from) { hintEl.textContent = "—— " + state.from; hintEl.className = "hint signed"; } else { hintEl.textContent = HINT; hintEl.className = "hint"; } };
+    var askFin = fin && tplOf(state.skin).finale_kind === "ask";
+    var signFn = function () { if (state.from) { hintEl.textContent = "—— " + state.from; hintEl.className = "hint signed"; } else { hintEl.textContent = HINT; hintEl.className = "hint"; } if (!askFin && (!fin || puz)) catSign(); };
     if (puz) {
       puz.onDone = signFn;
-      puz.loose.forEach(function (k, j) { timers.push(setTimeout(function () { addShard(k, null, vw, vh); }, tEnd + 350 + j * 250)); });
-      timers.push(setTimeout(ensurePeek, tEnd + 700));
-      timers.push(setTimeout(function () { hintEl.textContent = "照片后面好像藏着什么……把碎片拖到一起，拼成那句话"; }, tEnd + 900));
-    } else if (state.from) timers.push(setTimeout(signFn, tEnd + (reduce ? 0 : 1000)));
+      var wd = function (fn) { return function () { knockWhenDone(function () { if (myTok === runTok) fn(); }); }; };
+      puz.loose.forEach(function (k, j) { timers.push(setTimeout(wd(function () { addShard(k, null, vw, vh); }), tEnd + 350 + j * 250)); });
+      timers.push(setTimeout(wd(ensurePeek), tEnd + 700));
+      timers.push(setTimeout(wd(function () { hintEl.textContent = "照片后面好像藏着什么……把碎片拖到一起，拼成那句话"; }), tEnd + 900));
+    } else if (state.from) timers.push(setTimeout(function () { knockWhenDone(function () { if (myTok === runTok) signFn(); }); }, tEnd + (reduce ? 0 : 1000)));
   }
 
   /* ---- 保存：编辑者写入共享存储，其他人只存本机 ---- */
@@ -964,6 +1605,20 @@
       btnBgmDel = document.getElementById("btnBgmDel"), fBgm = document.getElementById("fBgm"), bgmNote = document.getElementById("bgmNote");
   document.getElementById("fPuzzle").addEventListener("change", function () { if (this.checked) document.getElementById("fFin").checked = true; });
   document.getElementById("fFin").addEventListener("change", function () { if (!this.checked) document.getElementById("fPuzzle").checked = false; });
+  function readCat() {
+    var g = function (id) { return document.getElementById(id).value; };
+    return normCat({ name: g("fCatName").trim(), fur: g("fCatFur"), pat: g("fCatPat"), eye: g("fCatEye"), bow: g("fCatBow") });
+  }
+  function renderCatPrev() {
+    var c = readCat(), box = document.getElementById("catPrev"); box.innerHTML = "";
+    box.appendChild(catBox(6, catCfg("a", c), "open"));
+  }
+  function fillCat() {
+    var c = state.cat;
+    document.getElementById("fCatName").value = c.name; document.getElementById("fCatFur").value = c.fur; document.getElementById("fCatPat").value = c.pat;
+    document.getElementById("fCatEye").value = c.eye; document.getElementById("fCatBow").value = c.bow; renderCatPrev();
+  }
+  ["fCatName", "fCatFur", "fCatPat", "fCatEye", "fCatBow"].forEach(function (id) { var e = document.getElementById(id); e.addEventListener("input", renderCatPrev); e.addEventListener("change", renderCatPrev); });
   var BGM_MAX = 6 * 1024 * 1024;
   function renderBgm() {
     stopPreview();
@@ -1175,7 +1830,7 @@
     fLayout.value = state.layout; fTo.value = state.to; fFrom.value = state.from; fEnv.checked = state.envelope; fFin.checked = state.finale; fFx.checked = state.fx; fGap.value = state.gap; fPets.checked = state.pets; gapVal.textContent = (state.gap / 1000).toFixed(2);
     draftSkin = state.skin; renderSkinChips();
     draftMedia = clone(state.media); fAutoVoice.checked = state.autoVoice; renderMediaList(); recLabel();
-    fCats.checked = state.cats; fFw.checked = state.fireworks; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm();
+    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; fCats.checked = state.cats; fFw.checked = state.fireworks; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm();
     modeNote.textContent = "这里的修改保存在你自己的浏览器里；点「分享」会把当前内容存到云端，生成发给 TA 的链接。";
   }
   function closeAll() {
@@ -1207,7 +1862,7 @@
       layout: fLayout.value, to: fTo.value.trim(), from: fFrom.value.trim(), envelope: fEnv.checked, finale: fFin.checked, fx: fFx.checked,
       msgs: lines.length ? lines : DEFAULTS.msgs.slice(),
       media: normMedia(draftMedia.filter(function (m) { return mediaSrc(m); })), autoVoice: fAutoVoice.checked,
-      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked,
+      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked,
       bgm: draftBgm && mediaSrc(draftBgm) ? normBgm(draftBgm) : null
     };
     var oldMedia = state.media.concat(state.bgm ? [state.bgm] : []);
@@ -1234,7 +1889,7 @@
   function useTemplate(id) {
     var t = TEMPLATES[id];
     undoState = clone(state);
-    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, bgm: state.bgm ? clone(state.bgm) : null };
+    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, catVoice: state.catVoice, knock: state.knock, bgm: state.bgm ? clone(state.bgm) : null };
     closeAll();
     persist(next).then(function () { play(); showToast("已套用「" + t.name + "」", true); });
   }

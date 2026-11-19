@@ -300,3 +300,86 @@ button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px
 .fw-sky.on { opacity: .94; }
 .fw-cv { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 61; pointer-events: none; transition: opacity .8s; }
 .fw-cv.off { opacity: 0; }
+
+/* ---- 你们的小猫 ---- */
+.cbody svg { display: block; shape-rendering: crispEdges; }
+.ctail { position: absolute; transform-origin: 0 100%; animation: tailWag 1.8s ease-in-out infinite; }
+.ctail svg { display: block; shape-rendering: crispEdges; }
+@keyframes tailWag { 50% { transform: rotate(14deg); } }
+@keyframes tailSpin { to { transform: rotate(360deg); } }
+.rescat.happy .ctail { animation: tailSpin .5s linear infinite; }
+.rescat { position: absolute; z-index: 4500; cursor: pointer; touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.rescat.sleep .cbody { transform: translateY(3px) scaleY(.94); transform-origin: bottom; }
+.rescat.sleep .ctail { animation: none; }
+.rescat.fluff .cbody { animation: fluff .6s ease; }
+@keyframes fluff { 20% { transform: scale(1.25, 1.15) translateY(-8px); } 40% { transform: scale(1.15) rotate(-5deg); } 60% { transform: rotate(5deg); } }
+.rescat.hop { animation: catHop .4s ease-out; }
+@keyframes catHop { 40% { transform: translateY(-14px); } }
+.cbub { position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); white-space: nowrap; font: 600 14px var(--font-ui); background: var(--sheet); color: var(--ink);
+  padding: .25em .75em; border-radius: 999px; box-shadow: 0 2px 8px rgba(0, 0, 0, .22); opacity: 0; transition: opacity .2s; pointer-events: none; }
+.cbub.show { opacity: 1; }
+.firecat { position: fixed; bottom: 10px; left: 50%; z-index: 62; pointer-events: none; }
+.firecat.jump { animation: fcJump .5s ease-out; }
+@keyframes fcJump { 35% { transform: translateY(-36px); } }
+@media (prefers-reduced-motion: reduce) { .rescat, .rescat *, .mailcat *, .firecat, .firecat * { animation: none !important; } }
+
+/* ---- 逗猫棒 ---- */
+.wandgame { position: fixed; inset: 0; z-index: 55; background: rgba(20, 10, 40, .38); touch-action: none; cursor: none; user-select: none; -webkit-user-select: none; transition: opacity .4s; }
+.wandgame.off { opacity: 0; pointer-events: none; }
+.wg-hint { position: absolute; left: 0; right: 0; top: calc(env(safe-area-inset-top, 0px) + 22px); text-align: center; font: 20px var(--font-win); color: #fff; text-shadow: 0 1px 6px rgba(0, 0, 0, .5); pointer-events: none; }
+.wg-hearts { position: absolute; left: 0; right: 0; top: calc(env(safe-area-inset-top, 0px) + 56px); text-align: center; font-size: 26px; letter-spacing: .2em; color: #ff6f91; pointer-events: none; }
+.wg-skip { position: absolute; right: 16px; bottom: calc(env(safe-area-inset-bottom, 0px) + 24px); border: 0; border-radius: 999px; padding: 8px 16px; background: rgba(255, 255, 255, .85); color: var(--ink); font: 14px var(--font-ui); cursor: pointer; }
+.wg-stick { position: absolute; left: 0; top: 0; width: 4px; height: 90px; border-radius: 2px; background: linear-gradient(#e8c98b, #b78a4a); transform-origin: 50% 0; pointer-events: none; will-change: transform; }
+.wg-tip { position: absolute; left: 0; top: 0; pointer-events: none; will-change: transform; transition: opacity .15s; }
+.wg-tip svg { display: block; shape-rendering: crispEdges; }
+.wg-tip.hide { opacity: 0; }
+.wg-cat { position: absolute; left: 0; top: 0; pointer-events: none; will-change: transform; }
+.wg-cat.moving .cbox { animation: catBob .3s steps(2) infinite; }
+.wg-cat.pounce .wg-jump { animation: pounceJump .45s ease-out; }
+@keyframes pounceJump { 40% { transform: translateY(-30px) scale(1.1); } }
+@media (prefers-reduced-motion: reduce) { .wg-cat, .wg-cat * { animation: none !important; } }
+
+/* ---- 猜纸箱 ---- */
+.wandgame.boxgame { cursor: default; }
+.carton { position: absolute; --carton: #d9a867; transition: left .45s ease-in-out, top .22s ease-out; }
+.carton svg { display: block; shape-rendering: crispEdges; filter: drop-shadow(0 4px 6px rgba(0, 0, 0, .35)); }
+.carton.pick { cursor: pointer; }
+.carton.pick:hover { transform: translateY(-5px); }
+.carton.wiggle { animation: boxWiggle .5s ease-in-out; }
+@keyframes boxWiggle { 20% { transform: rotate(-6deg); } 50% { transform: rotate(6deg); } 80% { transform: rotate(-3deg); } }
+.carton.empty { opacity: .6; }
+.carton .cbub { bottom: calc(100% + 6px); }
+.bg-cat { position: absolute; z-index: 2; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .carton, .carton * { animation: none !important; } }
+
+/* ---- 小猫打翻东西：桌子 + 桌上的小猫 + 落地的影子和灰尘 ---- */
+.ktable { position: absolute; left: 0; width: 100%; z-index: 2; pointer-events: none; animation: tableIn .5s cubic-bezier(.2, 1.3, .4, 1) both; }
+.ktable.out { animation: tableOut .5s ease-in forwards; }
+@keyframes tableIn { from { transform: translateY(calc(-1 * var(--ty))); } }
+@keyframes tableOut { to { transform: translateY(calc(-1 * var(--ty))); } }
+.ktop { height: var(--sl); background: linear-gradient(#efc88f 0 32%, #cb9558 32% 100%); border-bottom: 4px solid #8a5d2f; box-shadow: 0 8px 14px rgba(60, 40, 20, .22); }
+.kleg { position: absolute; top: 100%; width: var(--lw); height: var(--lh); background: linear-gradient(90deg, #b8824a, #9a6a38); box-shadow: 0 0 0 2px #7a5129 inset; }
+.kleg.l { left: 8px; } .kleg.r { right: 8px; }
+.kcat { position: absolute; left: 0; z-index: 4200; pointer-events: none; will-change: transform; }
+.kcat svg { display: block; shape-rendering: crispEdges; }
+.kshadow { position: absolute; z-index: 3; border-radius: 50%; background: rgba(40, 30, 50, .5); filter: blur(4px); pointer-events: none; }
+.kdust { position: absolute; z-index: 4; border-radius: 50%; background: rgba(150, 135, 160, .55); pointer-events: none; }
+.win.knocked { animation: none; }
+.win.knocked.out { animation: out .22s ease-in forwards; }
+@media (prefers-reduced-motion: reduce) { .kcat, .kcat *, .ktable { animation: none !important; } }
+.kprop { position: absolute; pointer-events: none; }
+.kprop svg { display: block; shape-rendering: crispEdges; }
+.kshard { position: absolute; z-index: 4; pointer-events: none; }
+.kcrack { position: absolute; z-index: 3; width: 3.4em; height: 3.4em; pointer-events: none; opacity: .95; }
+
+/* ---- 分享页签名：小猫举牌 ---- */
+.signcat { position: absolute; left: 0; z-index: 4300; pointer-events: none; will-change: transform; }
+.signcat svg { display: block; shape-rendering: crispEdges; }
+.ssign { position: absolute; left: 50%; bottom: 100%; translate: -50% 0; transform-origin: 50% 100%; animation: signIn .45s cubic-bezier(.2, 1.5, .4, 1) both; }
+.ssign::after { content: ""; position: absolute; left: 50%; top: 100%; width: 4px; height: var(--st); margin-left: -2px; background: #8a5d2f; }
+.ssign .sb { background: #fffaf0; border: 3px solid #8a5d2f; border-radius: 6px; padding: 6px 14px 7px; color: #4a3a4f; text-align: center; white-space: nowrap; box-shadow: 0 4px 10px rgba(60, 40, 20, .2); transform-origin: 50% 100%; animation: signSway 2.6s ease-in-out infinite alternate; }
+.ssign small { display: block; font: 13px var(--font-win); color: #8a7a8f; }
+.ssign b { display: block; font: 400 22px var(--font-win); }
+@keyframes signIn { from { transform: scale(0); } }
+@keyframes signSway { from { transform: rotate(-3deg); } to { transform: rotate(3deg); } }
+@media (prefers-reduced-motion: reduce) { .signcat, .signcat * { animation: none !important; } }

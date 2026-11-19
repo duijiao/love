@@ -33,7 +33,7 @@
   function tplOf(id) { return TEMPLATES[id] || TEMPLATES[defSkin()]; }
   function mkDefaults() {
     var id = defSkin(), t = TEMPLATES[id];
-    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, catVoice: true, knock: true, selfie: true, cake: true };
+    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, accept: "", cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, catVoice: true, knock: true, selfie: true, cake: true };
   }
   var DEFAULTS = mkDefaults();
 
@@ -145,6 +145,7 @@
       puzzle: !!o.puzzle,
       cats: o.cats !== false,
       fireworks: o.fireworks !== false,
+      accept: typeof o.accept === "string" ? o.accept.slice(0, 200) : "",
       cat: normCat(o.cat),
       wand: o.wand !== false,
       boxgame: o.boxgame !== false,
@@ -1529,7 +1530,7 @@
       var accepted = false;
       function accept() {
         if (accepted) return; accepted = true;
-        body.textContent = "我就知道你会答应 💗"; catMood("happy"); knockHalt();
+        body.textContent = state.accept || "我就知道你会答应 💗"; catMood("happy"); knockHalt();
         partyRun(function () { /* 合影、蛋糕都结束了，才放烟花 */
           if (state.fireworks && !reduce) { fireworks(text, catSign); return; }
           var r = el.getBoundingClientRect(); fxBurst(r.left + r.width / 2, r.top + r.height / 2);
@@ -1898,7 +1899,7 @@
 
   /* ---- 编辑面板：图片和语音列表 ---- */
   var draftMedia = [], rec = null, prev = null, draftBgm = null;
-  var fCats = document.getElementById("fCats"), fFw = document.getElementById("fFw"), fPuzzle = document.getElementById("fPuzzle"), fPhoto = document.getElementById("fPhoto"), btnAddBgm = document.getElementById("btnAddBgm"), btnBgmPrev = document.getElementById("btnBgmPrev"),
+  var fCats = document.getElementById("fCats"), fFw = document.getElementById("fFw"), fAccept = document.getElementById("fAccept"), fPuzzle = document.getElementById("fPuzzle"), fPhoto = document.getElementById("fPhoto"), btnAddBgm = document.getElementById("btnAddBgm"), btnBgmPrev = document.getElementById("btnBgmPrev"),
       btnBgmDel = document.getElementById("btnBgmDel"), fBgm = document.getElementById("fBgm"), bgmNote = document.getElementById("bgmNote");
   document.getElementById("fPuzzle").addEventListener("change", function () { if (this.checked) document.getElementById("fFin").checked = true; });
   document.getElementById("fFin").addEventListener("change", function () { if (!this.checked) document.getElementById("fPuzzle").checked = false; });
@@ -2127,7 +2128,7 @@
     fLayout.value = state.layout; fTo.value = state.to; fFrom.value = state.from; fEnv.checked = state.envelope; fFin.checked = state.finale; fFx.checked = state.fx; fGap.value = state.gap; fPets.checked = state.pets; gapVal.textContent = (state.gap / 1000).toFixed(2);
     draftSkin = state.skin; renderSkinChips();
     draftMedia = clone(state.media); fAutoVoice.checked = state.autoVoice; renderMediaList(); recLabel();
-    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; fCats.checked = state.cats; fFw.checked = state.fireworks; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm();
+    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; fCats.checked = state.cats; fFw.checked = state.fireworks; fAccept.value = state.accept || ""; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm();
     modeNote.textContent = "这里的修改保存在你自己的浏览器里；点「分享」会把当前内容存到云端，生成发给 TA 的链接。";
   }
   function closeAll() {
@@ -2159,7 +2160,7 @@
       layout: fLayout.value, to: fTo.value.trim(), from: fFrom.value.trim(), envelope: fEnv.checked, finale: fFin.checked, fx: fFx.checked,
       msgs: lines.length ? lines : DEFAULTS.msgs.slice(),
       media: normMedia(draftMedia.filter(function (m) { return mediaSrc(m); })), autoVoice: fAutoVoice.checked,
-      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked, selfie: document.getElementById("fSelfie").checked, cake: document.getElementById("fCake").checked,
+      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, accept: fAccept.value.trim().slice(0, 200), cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked, selfie: document.getElementById("fSelfie").checked, cake: document.getElementById("fCake").checked,
       bgm: draftBgm && mediaSrc(draftBgm) ? normBgm(draftBgm) : null
     };
     var oldMedia = state.media.concat(state.bgm ? [state.bgm] : []);
@@ -2186,7 +2187,7 @@
   function useTemplate(id) {
     var t = TEMPLATES[id];
     undoState = clone(state);
-    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, catVoice: state.catVoice, knock: state.knock, bgm: state.bgm ? clone(state.bgm) : null };
+    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, accept: state.accept, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, catVoice: state.catVoice, knock: state.knock, bgm: state.bgm ? clone(state.bgm) : null };
     closeAll();
     persist(next).then(function () { play(); showToast("已套用「" + t.name + "」", true); });
   }

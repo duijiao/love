@@ -90,6 +90,12 @@
     <label class="check"><input id="fPuzzle" type="checkbox"> 拼图告白：压轴那句话拆成碎片，藏在照片后面，拖到一起才能拼完整（需要已开压轴窗口，建议配 3 张以上照片）</label>
     <label class="check"><input id="fCats" type="checkbox"> 小猫（送信、陪伴、看烟花）：小猫叼着信把窗口送来；屏幕角落有只会犯困、会炸毛、会生气的猫</label>
     <label class="check"><input id="fKnock" type="checkbox"> 小猫打翻东西：小猫跳上桌子，把窗口一个个推下去，窗口带着重量摔在地上（会咚的一声、震一下；开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fAngler" type="checkbox"> 小猫钓鱼：小猫坐在右上角的钓鱼台上甩竿，鱼线落在窗口该在的地方，一竿把窗口吊出水面，“啪嗒”落下溅起水花（窗口越大越沉，要多拽几下；和“打翻东西 / 雪球”三选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fSnow" type="checkbox"> 雪球砸出来：小猫团雪球扔向屏幕，“啪”地炸开，窗口从雪渍里弹出来，屏幕上会留下一块雪痕（和“打翻东西 / 钓鱼”三选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fYarn" type="checkbox"> 线球拽出来：小猫一爪子拍出线球，线球拖着毛线滚到窗口该在的位置，猛地一拽，窗口从线球下面弹出来（和“打翻东西 / 钓鱼 / 雪球”多选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fPaw" type="checkbox"> 猫爪拍窗：一只巨大的猫爪从屏幕外伸进来，“啪”地按在窗口该在的位置，抬起后窗口留在肉垫印上（和上面几种出场方式五选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fBalloon" type="checkbox"> 气球带上来：窗口挂在一串气球下面从屏幕下方飘上来，到位后气球“啵”地破掉，窗口轻轻落下（和上面几种出场方式五选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fEntryRand" type="checkbox"> 出场方式随机：每次播放，从「叼信 / 打翻东西 / 钓鱼 / 雪球 / 线球 / 猫爪 / 气球」里随机换一种出场方式（上面几项的勾选会被忽略；需开着小猫）</label>
     <label class="check"><input id="fWand" type="checkbox"> 逗猫棒小游戏：压轴前手指变逗猫棒，逗到小猫 4 次才送来礼物盒（可跳过）</label>
     <label class="check"><input id="fBox" type="checkbox"> 猜纸箱小游戏：小猫藏进三个会换位的纸箱之一，猜对了才送来礼物盒（可跳过）</label>
     <label class="check"><input id="fFish" type="checkbox"> 晒鱼干喂猫：压轴前先把鱼干挂到绳子上晒，再拿晒好的鱼干喂小猫，吃饱了才送来礼物盒（可跳过）</label>
@@ -110,6 +116,7 @@
     </div>
     <label class="check"><input id="fCake" type="checkbox"> 爱心蛋糕：放烟花前小猫把蛋糕推下桌，蜡烛亮起，吹一口气（麦克风）或点一下屏幕才开始放烟花（需开着小猫和压轴窗口）</label>
     <label class="check"><input id="fWish" type="checkbox"> 哈气许愿：蜡烛亮起后，屏幕蒙上一层水汽，用手指在雾上写下愿望，写完雾气把愿望收走，才轮到吹蜡烛（需开着爱心蛋糕）</label>
+    <label class="check"><input id="fWishStar" type="checkbox"> 愿望变星星：放烟花时，雾上写下的愿望会飞上夜空，先连成一小片星座，再散成满天星（需开着哈气许愿和压轴烟花；只在本机显示一次，不保存）</label>
     <div class="mediabox">
       <div class="lbl">你们的小猫</div>
       <div class="field"><label for="fCatName">名字（信封和窗口标题上会用到）</label><input id="fCatName" type="text" maxlength="8" placeholder="比如：团子"></div>

@@ -33,7 +33,7 @@
   function tplOf(id) { return TEMPLATES[id] || TEMPLATES[defSkin()]; }
   function mkDefaults() {
     var id = defSkin(), t = TEMPLATES[id];
-    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, accept: "", cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, fish: true, randGame: false, catVoice: true, knock: true, selfie: true, selfiePhoto: null, cake: true, wish: true };
+    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, accept: "", cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, fish: true, randGame: false, catVoice: true, knock: true, selfie: true, selfiePhoto: null, cake: true, wish: true, wishStar: true, angler: false, snow: false, yarn: false, paw: false, balloon: false, entryRand: false };
   }
   var DEFAULTS = mkDefaults();
 
@@ -164,7 +164,14 @@
       selfie: o.selfie !== false,
       selfiePhoto: normPhoto(o.selfiePhoto),
       cake: o.cake !== false,
-      wish: o.wish !== false
+      wish: o.wish !== false,
+      wishStar: o.wishStar !== false,
+      angler: !!o.angler,
+      snow: !!o.snow,
+      yarn: !!o.yarn,
+      paw: !!o.paw,
+      balloon: !!o.balloon,
+      entryRand: !!o.entryRand
     };
   }
   function sig(s) { return JSON.stringify(s); }
@@ -913,8 +920,581 @@
     };
   }
 
+  /* ---- 小猫钓鱼 / 小猫雪球：两种由小猫“演”出来的出场方式（共用一点小工具） ---- */
+  function rmEl(e) { if (e && e.parentNode) e.remove(); }
+  function ease3(t) { return 1 - Math.pow(1 - t, 3); }
+  function noiseHit(t, dur, f, q, g, type, pw) {
+    var n = Math.floor(AC.sampleRate * dur), buf = AC.createBuffer(1, n, AC.sampleRate), d = buf.getChannelData(0), i;
+    for (i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, pw || 2);
+    var s = AC.createBufferSource(), fl = AC.createBiquadFilter(), gn = AC.createGain();
+    s.buffer = buf; fl.type = type || "bandpass"; fl.frequency.value = f; fl.Q.value = q || 0.7; gn.gain.value = g;
+    s.connect(fl); fl.connect(gn); gn.connect(master); s.start(t);
+  }
+  /* 小场景的时间线：me.go(时长, 每帧回调(0..1), 结束回调)；每帧最后调用 me.paint() */
+  function sceneLoop(me) {
+    me.tw = [];
+    me.go = function (ms, fn, next) { me.tw.push({ t0: performance.now(), ms: Math.max(1, ms), fn: fn, next: next }); };
+    function loop(now) {
+      if (me.dead) return;
+      me.raf = requestAnimationFrame(loop);
+      var cur = me.tw, cbs = []; me.tw = [];
+      cur.forEach(function (w) { var t = Math.max(0, Math.min(1, (now - w.t0) / w.ms)); w.fn(t); if (t < 1) me.tw.push(w); else if (w.next) cbs.push(w.next); });
+      cbs.forEach(function (c) { if (!me.dead) c(); });
+      if (me.paint) me.paint();
+    }
+    me.raf = requestAnimationFrame(loop);
+  }
+
+  /* ---- 小猫钓鱼：小猫坐在右上角的钓鱼台上，鱼线甩到窗口该在的地方，窗口被一竿吊起，“啪嗒”落下，溅起水花 ---- */
+  var fq = null;
+  function sfxSplash(v) {
+    if (!soundOn || !AC) return;
+    var t = AC.currentTime;
+    noiseHit(t, 0.24, 1500, 0.7, 0.2 * v, "bandpass", 2);
+    tone(520, t, 0.07, 0.05 * v, "sine"); tone(820, t + 0.05, 0.09, 0.04 * v, "sine");
+  }
+  /* 啪嗒：先是窗口拍在水面上的“啪”，再跟一小滴“嗒” */
+  function sfxPata(v) {
+    if (!soundOn || !AC) return;
+    var t = AC.currentTime;
+    noiseHit(t, 0.2, 800, 0.8, 0.32 * v, "bandpass", 2.2); tone(200, t, 0.1, 0.12 * v, "sine");
+    noiseHit(t + 0.1, 0.1, 2400, 0.9, 0.12 * v, "bandpass", 2); tone(460, t + 0.1, 0.06, 0.05 * v, "sine"); tone(330, t + 0.16, 0.08, 0.04 * v, "sine");
+  }
+  function sfxTug() { if (!soundOn || !AC) return; var t = AC.currentTime; tone(210, t, 0.12, 0.07, "triangle"); tone(160, t + 0.07, 0.12, 0.05, "triangle"); }
+  function sfxReel() { if (!soundOn || !AC) return; var t = AC.currentTime; for (var i = 0; i < 4; i++) tone(1500 + i * 60, t + i * 0.05, 0.03, 0.025, "square"); }
+  function fishAbort() {
+    var me = fq; if (!me) return; fq = null; me.dead = true; me.waiters = [];
+    cancelAnimationFrame(me.raf); me.tms.forEach(clearTimeout);
+    me.els.forEach(rmEl);
+  }
+  function fishAdd(it) { if (fq && !fq.dead) { fq.q.push(it); fq.pump(); } else if (it.quick) it.quick(); }
+  function fishStart(vw, vh, total, tok) {
+    fishAbort();
+    var u = Math.max(4, Math.min(7, Math.round(vw / 70))), cw = 14 * u, ch = 12 * u, deckW = Math.round(22 * u);
+    var me = fq = { q: [], busy: false, ready: false, finished: false, leaving: false, dead: false, waiters: [], total: total, done: 0, tw: [], raf: 0, tms: [], els: [], pump: null };
+    var topY = 46, pLeft = vw - deckW, pTop = topY + ch - Math.round(0.8 * u); /* 钓鱼台贴着右边，小猫坐在上面 */
+    var sx = pLeft + Math.round(2 * u), sy = topY;
+    var bx = sx + 2.5 * u, by = sy + 5 * u, tipX = bx - 11 * u, tipY = by - 8 * u;
+    var S = { hx: tipX, hy: tipY, hv: false, bend: 0, sag: 20 };
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "fishfx"); svg.setAttribute("width", vw); svg.setAttribute("height", vh); svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = '<path class="fz-rod" d="" stroke-width="' + (u * 0.7) + '"/><path class="fz-line" d=""/><g class="fz-hook" style="display:none"><rect x="' + (-0.8 * u) + '" y="' + (-1.2 * u) + '" width="' + (1.6 * u) + '" height="' + (1.2 * u) + '" fill="#e5484d"/><rect x="' + (-0.8 * u) + '" y="0" width="' + (1.6 * u) + '" height="' + (1.2 * u) + '" fill="#ffffff"/></g>';
+    var rod = svg.querySelector(".fz-rod"), line = svg.querySelector(".fz-line"), hook = svg.querySelector(".fz-hook");
+    var pier = mk("div", "fishpier", '<i class="fp-deck"></i><i class="fp-leg a"></i><i class="fp-leg b"></i><i class="fp-bar"></i><i class="fp-bucket"></i>');
+    pier.style.cssText = "left:" + pLeft + "px;top:" + pTop + "px;width:" + deckW + "px;--u:" + u + "px";
+    var cat = mk("div", "fishcat"), sit = mk("div", "mc-bob"), cbx = catBox(u, catCfg("c"), "up"), bub = mk("div", "cbub"), bt = 0;
+    cat.style.cssText = "left:" + sx + "px;top:" + sy + "px";
+    sit.appendChild(cbx); cat.appendChild(sit); cat.appendChild(bub);
+    stage.appendChild(pier); stage.appendChild(svg); stage.appendChild(cat); me.els.push(pier, svg, cat);
+    function say(t, ms) { bub.textContent = t; bub.classList.add("show"); clearTimeout(bt); bt = setTimeout(function () { bub.classList.remove("show"); }, ms || 900); me.tms.push(bt); }
+    me.paint = function () {
+      var dx = S.hx - tipX, dy = S.hy - tipY, dl = Math.sqrt(dx * dx + dy * dy) || 1, ux = dx / dl, uy = dy / dl;
+      var ex = tipX + ux * S.bend * 0.55, ey = tipY + uy * S.bend * 0.55;
+      rod.setAttribute("d", "M" + bx + "," + by + " Q" + (bx + (tipX - bx) * 0.6 + ux * S.bend * 0.35) + "," + (by + (tipY - by) * 0.6 + uy * S.bend * 0.35) + " " + ex + "," + ey);
+      if (S.hv) {
+        line.setAttribute("d", "M" + ex + "," + ey + " Q" + ((ex + S.hx) / 2) + "," + ((ey + S.hy) / 2 + S.sag) + " " + S.hx + "," + S.hy);
+        hook.style.display = ""; hook.setAttribute("transform", "translate(" + S.hx + "," + S.hy + ")");
+      } else { line.setAttribute("d", ""); hook.style.display = "none"; }
+    };
+    sceneLoop(me);
+    var go = me.go;
+    function splash(x, y, k) { /* 水波 + 溅起的水珠 */
+      var r = mk("div", "fish-rip"); r.style.cssText = "left:" + x + "px;top:" + y + "px;--k:" + k; stage.appendChild(r); me.els.push(r);
+      me.tms.push(setTimeout(function () { rmEl(r); }, 900));
+      if (k < 0.5) return;
+      var n = Math.round(6 + 6 * k), i, d, a, sp;
+      for (i = 0; i < n; i++) {
+        d = mk("i", "fish-drop"); a = -Math.PI * (0.1 + 0.8 * Math.random()); sp = (30 + Math.random() * 50) * k;
+        d.style.cssText = "left:" + x + "px;top:" + y + "px;--dx:" + (Math.cos(a) * sp).toFixed(1) + "px;--dy:" + (Math.sin(a) * sp).toFixed(1) + "px";
+        stage.appendChild(d); me.els.push(d);
+        (function (d) { me.tms.push(setTimeout(function () { rmEl(d); }, 800)); })(d);
+      }
+    }
+    function sideDrops(cx, y, spread, n) { /* “啪嗒”落地时，沿着窗口底边甩出去的水珠 */
+      for (var i = 0; i < n; i++) {
+        var d = mk("i", "fish-drop"), side = Math.random() < 0.5 ? -1 : 1;
+        d.style.cssText = "left:" + (cx + (Math.random() - 0.5) * spread) + "px;top:" + y + "px;--dx:" + (side * (8 + Math.random() * 36)).toFixed(1) + "px;--dy:" + (-(34 + Math.random() * 46)).toFixed(1) + "px";
+        stage.appendChild(d); me.els.push(d);
+        (function (d) { me.tms.push(setTimeout(function () { rmEl(d); }, 800)); })(d);
+      }
+    }
+    function one(it, next) {
+      var sp = me.q.length > 4 ? 0.72 : 1, el = it.el, w = it.w, h = it.h, tx = it.cx, ty = it.cy;
+      var px = tx, py = ty + h / 2 - 8, topF = ty - h / 2; /* 水潭在窗口底边，窗口从水里被吊起来 */
+      var ay = Math.min(topF, Math.max(14, topF - 80)), ax = tx + (tipX - tx) * 0.1;
+      var heavy = Math.max(0.7, Math.min(2.4, w / 200)), tugs = 1 + (heavy > 1.35 ? 1 : 0) + (heavy > 2 ? 1 : 0);
+      var dist = Math.sqrt((px - tipX) * (px - tipX) + (py - tipY) * (py - tipY)), arc = Math.min(140, 30 + dist * 0.22), semi = [0, 2, 4, 7, 9][(it.idx || 0) % 5];
+      var pool = null, z0 = el.style.zIndex, pend = 2;
+      function both() { if (--pend <= 0) next(); }
+      function cast() {
+        S.hv = true; S.hx = tipX; S.hy = tipY; S.bend = 0; S.sag = 24; cbx.setMood("up"); sfxReel();
+        go(500 * sp, function (t) {
+          var e = 1 - Math.pow(1 - t, 3);
+          S.hx = tipX + (px - tipX) * e; S.hy = tipY + (py - tipY) * e - Math.sin(Math.PI * e) * arc; S.sag = 24 * (1 - e) + 6; S.bend = -6 * Math.sin(Math.PI * t);
+        }, wait);
+      }
+      function wait() { /* 浮漂落水，水面荡开一个小水潭 */
+        var pw = Math.max(120, Math.min(340, w + 40)), ph = Math.max(36, Math.round(pw * 0.26));
+        pool = mk("div", "fish-pool"); pool.style.cssText = "left:" + px + "px;top:" + py + "px;width:" + pw + "px;height:" + ph + "px";
+        stage.appendChild(pool); me.els.push(pool);
+        splash(px, py, 0.7); sfxSplash(0.6); say(["嘿——", "上钩吧～", "来啦来啦"][(it.idx || 0) % 3], 800);
+        go(280 * sp, function (t) { S.hy = py + Math.sin(t * 12.57) * 4 * (1 - t); S.sag = 6; S.bend = 0; }, function () { tug(0); });
+      }
+      function tug(k) { /* 越大的窗口越沉，要多拽几下 */
+        if (k >= tugs) { pull(); return; }
+        cbx.setMood("wide"); sfxTug(); if (k === 0 && heavy > 1.35) say("好沉……", 900);
+        go(230 * sp, function (t) { var s = Math.sin(Math.PI * t); S.bend = (12 + 10 * heavy) * s; S.hy = py + s * (8 + 4 * heavy); S.sag = 2; }, function () { splash(px, py, 0.35); tug(k + 1); });
+      }
+      function pose(x, y, r, sc, op, att) { /* 窗口挂在鱼钩下面：x,y 是窗口顶边中点 */
+        el.style.transform = "translate(" + (x - tx).toFixed(1) + "px," + (y - topF).toFixed(1) + "px) rotate(" + r.toFixed(2) + "deg) scale(" + sc.toFixed(3) + ")";
+        el.style.opacity = op;
+        if (att) { S.hx = x; S.hy = y - 5; S.sag = 2; }
+      }
+      function pull() { /* 嘿咻——窗口破水而出，被吊到半空 */
+        cbx.setMood("happy"); say(heavy > 1.35 ? "嘿咻——！" : "钓到啦！", 900);
+        if (pool) pool.style.zIndex = 3;
+        el.style.zIndex = 4996; el.style.pointerEvents = "none"; el.style.transformOrigin = "50% 0";
+        pose(px, py, 0, 0.22, 0, true); it.show();
+        splash(px, py, 1.1); sfxSplash(1); sfxMeow("happy", semi);
+        go(340 * sp, function (t) {
+          var e = ease3(t);
+          pose(px + (ax - px) * e, py + (ay - py) * e, -8 * Math.sin(Math.PI * t), 0.22 + 0.78 * ease3(Math.min(1, t * 1.3)), Math.min(1, t * 6), true);
+          S.bend = 26 * Math.sin(Math.PI * Math.min(1, t * 1.2));
+        }, sway);
+      }
+      function sway() { /* 悬在空中晃两下 */
+        go(170 * sp, function (t) {
+          var k = Math.sin(t * 6.2832 * 1.4) * (1 - t);
+          pose(ax + 7 * k, ay, 8 * k, 1, 1, true); S.bend = 12 * (1 - t);
+        }, drop);
+      }
+      function drop() { /* 鱼钩一松，窗口“啪嗒”掉回水潭上，鱼钩飞回竿尖 */
+        var x0 = ax, y0 = ay;
+        go(230 * sp, function (t) { var e = t * t; pose(x0 + (tx - x0) * e, y0 + (topF - y0) * e, 0, 1, 1, false); }, land);
+        retract();
+      }
+      function land() {
+        el.style.transform = ""; el.style.opacity = ""; el.style.zIndex = z0; el.style.pointerEvents = "";
+        el.style.transformOrigin = "50% 100%";
+        try { var a = el.animate([{ transform: "scale(1.06,.88)" }, { transform: "scale(.98,1.03)", offset: 0.5 }, { transform: "none" }], { duration: 340, easing: "ease-out" }); a.onfinish = a.oncancel = function () { el.style.transformOrigin = ""; }; } catch (e) { el.style.transformOrigin = ""; }
+        sfxPata(1); splash(tx, ty + h / 2 - 6, 1.5); sideDrops(tx, ty + h / 2 - 4, w * 0.95, 8 + Math.round(4 * heavy));
+        if (pool) { var pl = pool; me.tms.push(setTimeout(function () { pl.classList.add("gone"); me.tms.push(setTimeout(function () { rmEl(pl); }, 700)); }, 1300)); }
+        if (it.land) it.land();
+        both();
+      }
+      function retract() { /* 收线，鱼钩飞回竿尖 */
+        var x0 = S.hx, y0 = S.hy; cbx.setMood("open");
+        go(340 * sp, function (t) { var e = t * t; S.hx = x0 + (tipX - x0) * e; S.hy = y0 + (tipY - y0) * e - Math.sin(Math.PI * e) * 30; S.sag = 6 + 30 * e; S.bend = 0; }, function () { S.hv = false; cbx.setMood("up"); both(); });
+      }
+      cast();
+    }
+    function leave() {
+      if (me.leaving || me.dead) return; me.leaving = true;
+      rod.style.opacity = 0; S.hv = false; cbx.setMood("happy"); sfxMeow("meow", 5); say("钓完啦～", 900);
+      me.tms.push(setTimeout(function () {
+        if (me.dead) return; sit.className = "mc-bob";
+        var d = vw - sx + 24, kf = [{ transform: "translateX(0)" }, { transform: "translateX(" + d + "px)" }];
+        pier.animate(kf, { duration: 700, easing: "ease-in", delay: 120, fill: "forwards" });
+        var a = cat.animate(kf, { duration: 700, easing: "ease-in", fill: "forwards" });
+        a.onfinish = function () {
+          if (me.dead) return; rmEl(cat); rmEl(svg); rmEl(pier); me.finished = true; cancelAnimationFrame(me.raf);
+          me.waiters.splice(0).forEach(function (f) { f(); });
+        };
+      }, 1000));
+    }
+    function pump() {
+      if (me.dead || me.busy || !me.ready) return;
+      var it = me.q.shift();
+      if (!it) { if (me.done >= me.total) leave(); return; }
+      me.busy = true;
+      one(it, function () { me.busy = false; me.done++; pump(); });
+    }
+    me.pump = pump;
+    /* 钓鱼台从右边滑进来，小猫跑上去坐好，竿子才亮出来 */
+    var d0 = vw - sx + 24, kf0 = [{ transform: "translateX(" + d0 + "px)" }, { transform: "translateX(0)" }];
+    pier.animate(kf0, { duration: 380, easing: "ease-out", fill: "both" });
+    var a0 = cat.animate(kf0, { duration: 650, easing: "ease-out", delay: 220, fill: "both" });
+    a0.onfinish = function () { if (me.dead) return; sit.className = ""; rod.style.opacity = 1; me.ready = true; pump(); };
+  }
+
+  /* ---- 小猫雪球：团雪球扔向屏幕，“啪”地炸开，窗口从雪渍里弹出来，屏幕上留下一块雪痕 ---- */
+  var sq = null;
+  function sfxPat() { if (!soundOn || !AC) return; var t = AC.currentTime; noiseHit(t, 0.07, 700, 0.6, 0.12, "lowpass", 2); tone(240, t, 0.05, 0.04, "sine"); }
+  function sfxWhoosh() { if (!soundOn || !AC) return; noiseHit(AC.currentTime, 0.3, 1800, 0.5, 0.08, "bandpass", 0.8); }
+  function sfxSplat(v) {
+    if (!soundOn || !AC) return;
+    var t = AC.currentTime;
+    noiseHit(t, 0.22, 1200, 0.6, 0.32 * v, "bandpass", 2.4); noiseHit(t, 0.14, 420, 0.7, 0.3 * v, "lowpass", 2); tone(150, t, 0.12, 0.12 * v, "sine");
+  }
+  function snowAbort() {
+    var me = sq; if (!me) return; sq = null; me.dead = true; me.waiters = [];
+    cancelAnimationFrame(me.raf); me.tms.forEach(clearTimeout);
+    me.els.forEach(rmEl);
+  }
+  function snowAdd(it) { if (sq && !sq.dead) { sq.q.push(it); sq.pump(); } else if (it.quick) it.quick(); }
+  var SNOWB = ["  ####  ", " #wwww# ", "#wwwwww#", "#wwwwws#", "#wwwwss#", "#wwwsss#", " #ssss# ", "  ####  "];
+  function snowBall(D) {
+    var col = { "#": "#8fb4dc", w: "#ffffff", s: "#d4e4f6" }, s = "";
+    SNOWB.forEach(function (r, y) { for (var x = 0; x < 8; x++) { var f = col[r.charAt(x)]; if (f) s += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + f + '"/>'; } });
+    return '<svg width="' + D + '" height="' + D + '" viewBox="0 0 8 8" aria-hidden="true">' + s + "</svg>";
+  }
+  /* 雪痕：一块不规则的像素雪渍 + 飞溅的雪点 + 慢慢淌下来的雪水，留在屏幕上不消失 */
+  function splatEl(rx, ry) {
+    var p = 6, mx = 44, W = Math.ceil((rx * 2 + mx * 2) / p) * p, H0 = Math.ceil((ry * 2 + mx * 2) / p) * p, H = H0 + 70, cx = W / 2, cy = H0 / 2, i;
+    var ph = [Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28], am = [0.13, 0.09, 0.06 + Math.random() * 0.04];
+    function R(th) { return 1 + am[0] * Math.sin(3 * th + ph[0]) + am[1] * Math.sin(5 * th + ph[1]) + am[2] * Math.sin(8 * th + ph[2]); }
+    function inside(x, y, pad) { var dx = x - cx, dy = y - cy, a = rx + pad, b = ry + pad; return Math.sqrt(dx * dx / (a * a) + dy * dy / (b * b)) <= R(Math.atan2(dy, dx)); }
+    function mask(pad) {
+      var d = "", y, x, run;
+      for (y = 0; y < H0; y += p) {
+        run = -1;
+        for (x = 0; x <= W; x += p) {
+          var on = x < W && inside(x + p / 2, y + p / 2, pad);
+          if (on && run < 0) run = x;
+          else if (!on && run >= 0) { d += "M" + run + " " + y + "h" + (x - run) + "v" + p + "h" + (run - x) + "z"; run = -1; }
+        }
+      }
+      return d;
+    }
+    var fb = "", fw = "", drips = "";
+    for (i = 0; i < 11; i++) { /* 飞溅出去的雪点 */
+      var a = Math.random() * 6.2832, rr = 1.12 + Math.random() * 0.4, s = p * (1 + Math.floor(Math.random() * 2)),
+        x = Math.round((cx + Math.cos(a) * (rx + 6) * rr - s / 2) / p) * p, y = Math.round((cy + Math.sin(a) * (ry + 6) * rr - s / 2) / p) * p;
+      if (x < 2 || y < 2 || x + s > W - 2 || y + s > H0 - 2 || inside(x + s / 2, y + s / 2, 4)) continue;
+      fb += "M" + (x - 2) + " " + (y - 2) + "h" + (s + 4) + "v" + (s + 4) + "h" + (-s - 4) + "z"; fw += "M" + x + " " + y + "h" + s + "v" + s + "h" + (-s) + "z";
+    }
+    for (i = 0; i < 3; i++) { /* 淌下来的雪水 */
+      var dx = Math.round((cx + (Math.random() - 0.5) * rx * 1.3) / p) * p, yb = cy, L;
+      while (yb < H0 && inside(dx + p / 2, yb, 0)) yb += 2;
+      yb -= 4; L = Math.min(14 + Math.random() * 30, H - yb - 4);
+      if (L < 12) continue;
+      drips += '<g class="sd" style="animation-delay:' + (0.5 + Math.random() * 2.2).toFixed(2) + "s;animation-duration:" + (5 + Math.random() * 4).toFixed(1) + 's"><rect x="' + (dx - 2) + '" y="' + yb + '" width="' + (p + 4) + '" height="' + (L + 4) + '" fill="#a9c8ea"/><rect x="' + dx + '" y="' + (yb - 2) + '" width="' + p + '" height="' + (L + 2) + '" fill="#fff"/></g>';
+    }
+    var el = mk("div", "snow-splat", '<svg width="' + W + '" height="' + H + '" viewBox="0 0 ' + W + " " + H + '" aria-hidden="true"><path d="' + mask(p * 0.7) + fb + '" fill="#a9c8ea"/><path d="' + mask(0) + fw + '" fill="#fff"/>' + drips + "</svg>");
+    el.style.transformOrigin = "50% " + cy + "px";
+    return { el: el, W: W, H0: H0 };
+  }
+  function snowCap(el) { /* 窗口顶上顶着一层雪，过一会儿化掉 */
+    if (el.classList.contains("photo")) return;
+    var c = mk("i", "snow-cap", '<svg viewBox="0 0 100 12" preserveAspectRatio="none" width="100%" height="100%" aria-hidden="true"><path d="M0 0H100V5Q97 5 96 8T92 6Q88 4 86 9T80 5Q75 3 73 10T66 5Q60 4 58 8T52 5Q45 3 43 11T36 5Q30 4 28 8T22 5Q15 3 13 9T7 5Q3 4 2 7T0 5Z" fill="#fff"/></svg>');
+    el.appendChild(c);
+    setTimeout(function () {
+      try { var a = c.animate([{ opacity: 1, transform: "none" }, { opacity: 0, transform: "translateY(35%) scaleY(.3)" }], { duration: 1500, easing: "ease-in", fill: "forwards" }); a.onfinish = function () { rmEl(c); }; } catch (e) { rmEl(c); }
+    }, 1500);
+  }
+  function snowStart(vw, vh, total, tok) {
+    snowAbort();
+    var u = Math.max(4, Math.min(7, Math.round(vw / 70))), cw = 14 * u, ch = 12 * u, D = 4 * u;
+    var me = sq = { q: [], busy: false, ready: false, finished: false, leaving: false, dead: false, waiters: [], total: total, done: 0, tw: [], raf: 0, tms: [], els: [], pump: null };
+    var sx = Math.round(vw * 0.62 - cw / 2), sy = Math.round(vh - ch - 56);
+    var HX = sx + 7 * u, HY = sy + 8 * u, LX = sx + 8 * u, LY = sy - 1.5 * u; /* 抱在胸前 / 举过头顶 */
+    var C = { y: 0, r: 0 }, B = { x: HX, y: HY, s: 1, r: 0, on: false };
+    var cat = mk("div", "snowcat"), sit = mk("div", "mc-bob"), cbx = catBox(u, catCfg("b"), "up"), bub = mk("div", "cbub"), bt = 0;
+    cat.style.cssText = "left:" + sx + "px;top:" + sy + "px";
+    sit.style.transformOrigin = "50% 100%";
+    sit.appendChild(cbx); cat.appendChild(sit); cat.appendChild(bub);
+    var ball = mk("div", "snowball", snowBall(D)); ball.style.display = "none";
+    stage.appendChild(cat); stage.appendChild(ball); me.els.push(cat, ball);
+    function say(t, ms) { bub.textContent = t; bub.classList.add("show"); clearTimeout(bt); bt = setTimeout(function () { bub.classList.remove("show"); }, ms || 900); me.tms.push(bt); }
+    me.paint = function () {
+      if (!sit.className) sit.style.transform = "translateY(" + C.y.toFixed(1) + "px) rotate(" + C.r.toFixed(1) + "deg)";
+      if (B.on) ball.style.transform = "translate(" + (B.x - D / 2).toFixed(1) + "px," + (B.y - D / 2).toFixed(1) + "px) rotate(" + B.r.toFixed(0) + "deg) scale(" + B.s.toFixed(3) + ")";
+    };
+    sceneLoop(me);
+    var go = me.go;
+    function shake(a) { try { stage.animate([{ translate: "0 0" }, { translate: "0 " + a + "px" }, { translate: "0 " + (-a * 0.6) + "px" }, { translate: a * 0.4 + "px 0" }, { translate: "0 0" }], { duration: 240, easing: "ease-out" }); } catch (er) {} }
+    function burst(x, y, size) { /* 白闪 + 四散的雪块 */
+      var f = mk("div", "snow-flash"); f.style.cssText = "left:" + x + "px;top:" + y + "px;width:" + size * 2.4 + "px;height:" + size * 2.4 + "px"; stage.appendChild(f); me.els.push(f);
+      try { var fa = f.animate([{ transform: "translate(-50%,-50%) scale(.3)", opacity: 0.95 }, { transform: "translate(-50%,-50%) scale(1.1)", opacity: 0 }], { duration: 300, easing: "ease-out" }); fa.onfinish = function () { rmEl(f); }; } catch (e) { rmEl(f); }
+      var n = 16, i;
+      for (i = 0; i < n; i++) {
+        var c = mk("i", "snow-chunk"), s = 5 + Math.floor(Math.random() * 3) * 3, a = (i / n) * 6.2832 + Math.random() * 0.5, d = size * (0.55 + Math.random() * 0.8);
+        c.style.cssText = "left:" + x + "px;top:" + y + "px;width:" + s + "px;height:" + s + "px"; stage.appendChild(c); me.els.push(c);
+        try {
+          var ca = c.animate([{ transform: "translate(-50%,-50%) rotate(0)", opacity: 1 }, { transform: "translate(calc(-50% + " + (Math.cos(a) * d).toFixed(1) + "px),calc(-50% + " + (Math.sin(a) * d * 0.8 + 24 + Math.random() * 30).toFixed(1) + "px)) rotate(" + ((Math.random() - 0.5) * 360).toFixed(0) + "deg)", opacity: 0 }], { duration: 480 + Math.random() * 360, easing: "cubic-bezier(.2,.7,.4,1)" });
+          ca.onfinish = (function (c) { return function () { rmEl(c); }; })(c);
+        } catch (e) { rmEl(c); }
+      }
+    }
+    function one(it, next) {
+      var sp = me.q.length > 4 ? 0.72 : 1, el = it.el, w = it.w, h = it.h, tx = it.cx, ty = it.cy, semi = [0, 2, 4, 7, 9][(it.idx || 0) % 5];
+      var Sf = Math.max(2.2, Math.min(7, Math.max(56, Math.min(120, Math.min(w, h) * 0.55)) / D)); /* 砸到“屏幕”上时雪球已经大了好几倍 */
+      function pack() { /* 团雪球：拍三下，越拍越圆 */
+        cbx.setMood("open"); B.on = true; B.x = HX; B.y = HY; B.r = 0; B.s = 0.3; ball.style.display = "";
+        if ((it.idx || 0) === 0) say("团个雪球～", 900);
+        var beats = 0;
+        go(420 * sp, function (t) {
+          var k = Math.floor(t * 3); if (k > beats) { beats = k; sfxPat(); }
+          C.y = Math.abs(Math.sin(t * 3 * Math.PI)) * u * 0.9; C.r = 0;
+          B.s = 0.3 + 0.7 * ease3(t); B.y = HY + C.y * 0.8;
+        }, wind);
+      }
+      function wind() { /* 举过头顶，身子往后仰 */
+        cbx.setMood("wide");
+        go(180 * sp, function (t) {
+          var e = ease3(t); B.x = HX + (LX - HX) * e; B.y = HY + (LY - HY) * e - Math.sin(Math.PI * e) * u; B.s = 1 + 0.12 * e; C.r = -9 * e; C.y = u * 0.6 * e;
+        }, fly);
+      }
+      function fly() { /* 朝屏幕扔出去：一路变大，像朝你飞来 */
+        sfxWhoosh(); cbx.setMood("happy");
+        var x0 = B.x, y0 = B.y, cxp = (x0 + tx) / 2 + (tx - x0) * 0.1, cyp = Math.min(y0, ty) - 40 - Math.abs(ty - y0) * 0.25;
+        go(400 * sp, function (t) {
+          var e = Math.pow(t, 1.3), a = (1 - e) * (1 - e), b = 2 * (1 - e) * e, c = e * e;
+          B.x = a * x0 + b * cxp + c * tx; B.y = a * y0 + b * cyp + c * ty; B.s = 1.12 + (Sf - 1.12) * Math.pow(t, 1.6); B.r = t * 480;
+          C.r = t < 0.2 ? -9 + 21 * (t / 0.2) : 12 * (1 - (t - 0.2) / 0.8); C.y = -u * 1.2 * Math.sin(Math.PI * Math.min(1, t * 2));
+        }, impact);
+      }
+      function impact() { /* 啪！雪球炸开，窗口从雪渍里弹出来 */
+        B.on = false; ball.style.display = "none"; C.r = 0; C.y = 0; cbx.setMood("up");
+        var rx = Math.min(190, w * 0.56 + 8), ry = Math.min(150, h * 0.56 + 14), sp2 = splatEl(rx, ry);
+        sp2.el.style.left = (tx - sp2.W / 2) + "px"; sp2.el.style.top = (ty - sp2.H0 / 2) + "px"; stage.appendChild(sp2.el); /* 雪痕不记进 els：会一直留在屏幕上 */
+        burst(tx, ty, Math.max(rx, ry) * 0.9); sfxSplat(1); shake(2 + Math.min(3, w / 120)); sfxMeow("happy", semi);
+        if ((it.idx || 0) % 3 === 0) say("啪！", 700);
+        it.show();
+        try { el.animate([{ opacity: 0, transform: "scale(.4) translateY(16px)" }, { opacity: 1, transform: "scale(1.08) translateY(-3px)", offset: 0.6 }, { opacity: 1, transform: "none" }], { duration: 440, easing: "cubic-bezier(.2,.9,.3,1)", fill: "backwards" }); } catch (e) {}
+        snowCap(el);
+        me.tms.push(setTimeout(function () { if (!me.dead && it.land) it.land(); }, 150));
+        me.tms.push(setTimeout(next, 170 * sp));
+      }
+      pack();
+    }
+    function leave() {
+      if (me.leaving || me.dead) return; me.leaving = true;
+      cbx.setMood("happy"); sfxMeow("meow", 5); say("扔完啦～", 900);
+      me.tms.push(setTimeout(function () {
+        if (me.dead) return; sit.className = "mc-bob"; sit.style.transform = "";
+        var a = cat.animate([{ transform: "translateX(0)" }, { transform: "translateX(" + (-(sx + cw + 24)) + "px)" }], { duration: 700, easing: "ease-in", fill: "forwards" });
+        a.onfinish = function () {
+          if (me.dead) return; rmEl(cat); rmEl(ball); me.finished = true; cancelAnimationFrame(me.raf);
+          me.waiters.splice(0).forEach(function (f) { f(); });
+        };
+      }, 900));
+    }
+    function pump() {
+      if (me.dead || me.busy || !me.ready) return;
+      var it = me.q.shift();
+      if (!it) { if (me.done >= me.total) leave(); return; }
+      me.busy = true;
+      one(it, function () { me.busy = false; me.done++; pump(); });
+    }
+    me.pump = pump;
+    /* 小猫从左边跑进来，站好 */
+    var a0 = cat.animate([{ transform: "translateX(" + (-(sx + cw + 24)) + "px)" }, { transform: "translateX(0)" }], { duration: 700, easing: "ease-out", fill: "both" });
+    a0.onfinish = function () { if (me.dead) return; sit.className = ""; me.ready = true; pump(); };
+  }
+
+
+  /* ---- 小猫线球：小猫一爪子拍出线球，线球拖着毛线滚到窗口该在的位置，猛地一拽，窗口从线球下面弹出来 ---- */
+  var yq = null;
+  function sfxBat() { if (!soundOn || !AC) return; var t = AC.currentTime; noiseHit(t, 0.08, 1400, 0.8, 0.1, "bandpass", 2); tone(520, t, 0.05, 0.05, "triangle"); }
+  function sfxYank(v) { if (!soundOn || !AC) return; var t = AC.currentTime; tone(300, t, 0.06, 0.1 * v, "triangle"); tone(760, t + 0.04, 0.1, 0.08 * v, "sine"); noiseHit(t, 0.1, 2400, 0.8, 0.1 * v, "bandpass", 2); }
+  function yarnAbort() {
+    var me = yq; if (!me) return; yq = null; me.dead = true; me.waiters = [];
+    cancelAnimationFrame(me.raf); me.tms.forEach(clearTimeout); me.els.forEach(rmEl);
+  }
+  function yarnAdd(it) { if (yq && !yq.dead) { yq.q.push(it); yq.pump(); } else if (it.quick) it.quick(); }
+  var YARNB = ["  ####  ", " #oolo# ", "#ooloooo", "#lloooo#", "#oooollo", "#oolooo#", " #oooo# ", "  ####  "];
+  function yarnBall(D) {
+    var col = { "#": "#b0405a", o: "#ff8fb1", l: "#ffd0df" }, s = "";
+    YARNB.forEach(function (r, y) { for (var x = 0; x < 8; x++) { var f = col[r.charAt(x)]; if (f) s += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + f + '"/>'; } });
+    return '<svg width="' + D + '" height="' + D + '" viewBox="0 0 8 8" aria-hidden="true">' + s + "</svg>";
+  }
+  function yarnStart(vw, vh, total, tok) {
+    yarnAbort();
+    var u = Math.max(4, Math.min(7, Math.round(vw / 70))), cw = 14 * u, ch = 12 * u, D = 4 * u;
+    var me = yq = { q: [], busy: false, ready: false, finished: false, leaving: false, dead: false, waiters: [], total: total, done: 0, tw: [], raf: 0, tms: [], els: [], pump: null };
+    var sx = Math.round(vw * 0.62 - cw / 2), sy = Math.round(vh - ch - 56);
+    var AX = sx + 4 * u, AY = sy + 9 * u, HX = sx + 1 * u, HY = sy + 10.5 * u; /* 线头在小猫爪边，线球放在脚边 */
+    var C = { y: 0, r: 0 }, B = { x: HX, y: HY, s: 1, r: 0, on: false }, T = { on: false, sag: 0 };
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "yarnfx"); svg.setAttribute("width", vw); svg.setAttribute("height", vh); svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = '<path d=""/>';
+    var thread = svg.firstChild;
+    var cat = mk("div", "snowcat"), sit = mk("div", "mc-bob"), cbx = catBox(u, catCfg("a"), "up"), bub = mk("div", "cbub"), bt = 0;
+    cat.style.cssText = "left:" + sx + "px;top:" + sy + "px";
+    sit.style.transformOrigin = "50% 100%";
+    sit.appendChild(cbx); cat.appendChild(sit); cat.appendChild(bub);
+    var ball = mk("div", "snowball", yarnBall(D)); ball.style.display = "none";
+    stage.appendChild(svg); stage.appendChild(cat); stage.appendChild(ball); me.els.push(svg, cat, ball);
+    function say(t, ms) { bub.textContent = t; bub.classList.add("show"); clearTimeout(bt); bt = setTimeout(function () { bub.classList.remove("show"); }, ms || 900); me.tms.push(bt); }
+    me.paint = function () {
+      if (!sit.className) sit.style.transform = "translateY(" + C.y.toFixed(1) + "px) rotate(" + C.r.toFixed(1) + "deg)";
+      if (B.on) ball.style.transform = "translate(" + (B.x - D / 2).toFixed(1) + "px," + (B.y - D / 2).toFixed(1) + "px) rotate(" + B.r.toFixed(0) + "deg) scale(" + B.s.toFixed(3) + ")";
+      thread.setAttribute("d", T.on ? "M" + AX + "," + AY + " Q" + ((AX + B.x) / 2) + "," + ((AY + B.y) / 2 + T.sag) + " " + B.x + "," + B.y : "");
+    };
+    sceneLoop(me);
+    var go = me.go;
+    function fuzz(x, y, n) { /* 拽出来时飞散的毛线头 */
+      for (var i = 0; i < n; i++) {
+        var c = mk("i", "snow-chunk yarn-bit"), a = Math.random() * 6.2832, d = 30 + Math.random() * 50;
+        c.style.cssText = "left:" + x + "px;top:" + y + "px;width:5px;height:5px"; stage.appendChild(c); me.els.push(c);
+        try { var ca = c.animate([{ transform: "translate(-50%,-50%)", opacity: 1 }, { transform: "translate(calc(-50% + " + (Math.cos(a) * d).toFixed(1) + "px),calc(-50% + " + (Math.sin(a) * d * 0.7 + 20).toFixed(1) + "px)) rotate(" + ((Math.random() - 0.5) * 300).toFixed(0) + "deg)", opacity: 0 }], { duration: 500 + Math.random() * 300, easing: "ease-out" }); ca.onfinish = (function (c) { return function () { rmEl(c); }; })(c); } catch (e) { rmEl(c); }
+      }
+    }
+    function one(it, next) {
+      var sp = me.q.length > 4 ? 0.72 : 1, el = it.el, w = it.w, tx = it.cx, ty = it.cy, semi = [0, 2, 4, 7, 9][(it.idx || 0) % 5];
+      var heavy = Math.max(0.7, Math.min(2.4, w / 200)), tugs = 1 + (heavy > 1.8 ? 1 : 0);
+      function bat() { /* 一爪子把线球拍出去 */
+        cbx.setMood("wide"); B.on = true; B.x = HX; B.y = HY; B.r = 0; B.s = 1; T.on = true; T.sag = 8; ball.style.display = "";
+        if ((it.idx || 0) === 0) say("看我的线球～", 900);
+        go(160 * sp, function (t) { C.r = -6 * Math.sin(Math.PI * t) - 4 * t; C.y = 0; }, roll); sfxBat();
+      }
+      function roll() { /* 线球拖着毛线滚过去，一路蹦两下 */
+        cbx.setMood("happy");
+        var x0 = B.x, y0 = B.y;
+        go(520 * sp, function (t) {
+          var e = ease3(t);
+          B.x = x0 + (tx - x0) * e; B.y = y0 + (ty - y0) * e - Math.abs(Math.sin(t * 6.2832 * 1.5)) * 26 * (1 - t); B.r = (tx >= x0 ? 1 : -1) * t * 900;
+          T.sag = 40 * (1 - e) + 14; C.r = 6 * (1 - t); C.y = 0;
+        }, tug);
+      }
+      function tug(k) { /* 线绷紧，小猫往后一仰，线球在窗口位置抖 */
+        k = k || 0;
+        if (k >= tugs) { yank(); return; }
+        cbx.setMood("wide"); sfxTug();
+        go(210 * sp, function (t) { var s = Math.sin(Math.PI * t); T.sag = 14 * (1 - s); C.r = 8 * s; C.y = u * 0.4 * s; B.x = tx + Math.sin(t * 37) * 3 * s; B.y = ty; }, function () { tug(k + 1); });
+      }
+      function yank() { /* 猛地一拽：窗口从线球底下弹出来，线球被拽回小猫脚边 */
+        cbx.setMood("happy"); say(heavy > 1.35 ? "嘿咻——！" : "拽出来啦！", 800);
+        it.show(); sfxYank(1); fuzz(tx, ty, 10); sfxMeow("happy", semi);
+        try { el.animate([{ opacity: 0, transform: "scale(.2) rotate(-12deg)" }, { opacity: 1, transform: "scale(1.1) rotate(3deg)", offset: 0.6 }, { opacity: 1, transform: "none" }], { duration: 420, easing: "cubic-bezier(.2,.9,.3,1)", fill: "backwards" }); } catch (e) {}
+        me.tms.push(setTimeout(function () { if (!me.dead && it.land) it.land(); }, 150));
+        var x0 = B.x, y0 = B.y;
+        go(420 * sp, function (t) {
+          var e = t * t; B.x = x0 + (HX - x0) * e; B.y = y0 + (HY - y0) * e - Math.sin(Math.PI * e) * 50; B.r += 24; T.sag = 10 + 30 * e; C.r = 8 * (1 - t); C.y = 0;
+        }, function () { B.on = false; T.on = false; ball.style.display = "none"; cbx.setMood("up"); next(); });
+      }
+      bat();
+    }
+    function leave() {
+      if (me.leaving || me.dead) return; me.leaving = true;
+      cbx.setMood("happy"); sfxMeow("meow", 5); say("玩够啦～", 900);
+      me.tms.push(setTimeout(function () {
+        if (me.dead) return; sit.className = "mc-bob"; sit.style.transform = "";
+        var a = cat.animate([{ transform: "translateX(0)" }, { transform: "translateX(" + (vw - sx + 24) + "px)" }], { duration: 700, easing: "ease-in", fill: "forwards" });
+        a.onfinish = function () { if (me.dead) return; rmEl(cat); rmEl(ball); rmEl(svg); me.finished = true; cancelAnimationFrame(me.raf); me.waiters.splice(0).forEach(function (f) { f(); }); };
+      }, 900));
+    }
+    function pump() {
+      if (me.dead || me.busy || !me.ready) return;
+      var it = me.q.shift();
+      if (!it) { if (me.done >= me.total) leave(); return; }
+      me.busy = true;
+      one(it, function () { me.busy = false; me.done++; pump(); });
+    }
+    me.pump = pump;
+    var a0 = cat.animate([{ transform: "translateX(" + (vw - sx + 24) + "px)" }, { transform: "translateX(0)" }], { duration: 700, easing: "ease-out", fill: "both" });
+    a0.onfinish = function () { if (me.dead) return; sit.className = ""; me.ready = true; pump(); };
+  }
+
+
+  /* ---- 猫爪拍窗 / 气球带上来：不需要小猫排队的两种出场（窗口之间可以同时进行） ---- */
+  var pq = null;
+  function pqAbort() { var me = pq; if (!me) return; pq = null; me.dead = true; me.waiters = []; me.tms.forEach(clearTimeout); me.els.forEach(rmEl); }
+  function pqStart(total) { pqAbort(); return (pq = { dead: false, finished: false, waiters: [], total: total, done: 0, tms: [], els: [] }); }
+  function pqAdd(it, fn) {
+    var me = pq; if (!me || me.dead) { if (it.quick) it.quick(); return; }
+    fn(me, function () { if (me.dead) return; if (++me.done >= me.total) me.tms.push(setTimeout(function () { if (me.dead) return; me.finished = true; me.waiters.splice(0).forEach(function (f) { f(); }); }, 350)); });
+  }
+  function pqTimer(me, f, ms) { me.tms.push(setTimeout(function () { if (!me.dead) f(); }, ms)); }
+  /* 肉垫：像素风猫爪，fur 毛色，bean 肉垫色；stamp 时只画一种颜色 */
+  function pawSvg(cell, fur, bean, stamp) {
+    var N = 20, g = [], x, y, out = "";
+    function disc(cx, cy, rx, ry, v) { for (y = 0; y < N; y++) for (x = 0; x < N; x++) { var dx = (x + 0.5 - cx) / rx, dy = (y + 0.5 - cy) / ry; if (dx * dx + dy * dy <= 1) g[y][x] = v; } }
+    for (y = 0; y < N; y++) { g[y] = []; for (x = 0; x < N; x++) g[y][x] = 0; }
+    disc(3.6, 6.2, 2.7, 3.2, 1); disc(7.8, 3.4, 2.8, 3.4, 1); disc(12.2, 3.4, 2.8, 3.4, 1); disc(16.4, 6.2, 2.7, 3.2, 1); disc(10, 13.4, 7, 6, 1);
+    if (!stamp) { disc(10, 14, 4.4, 3.4, 2); disc(3.6, 6.4, 1.2, 1.4, 2); disc(7.8, 3.6, 1.3, 1.6, 2); disc(12.2, 3.6, 1.3, 1.6, 2); disc(16.4, 6.4, 1.2, 1.4, 2); }
+    for (y = 0; y < N; y++) for (x = 0; x < N; x++) {
+      var v = g[y][x], f = null;
+      if (v === 2) f = bean; else if (v === 1) f = stamp ? fur : fur;
+      else if (!stamp && ((g[y - 1] && g[y - 1][x]) || (g[y + 1] && g[y + 1][x]) || g[y][x - 1] || g[y][x + 1])) f = "var(--pet-line)";
+      if (f) out += '<rect x="' + x + '" y="' + y + '" width="1" height="1" fill="' + f + '"/>';
+    }
+    return '<svg width="' + N * cell + '" height="' + N * cell + '" viewBox="0 0 ' + N + " " + N + '" aria-hidden="true" style="display:block;shape-rendering:crispEdges">' + out + "</svg>";
+  }
+  function shakeStage(a) { try { stage.animate([{ translate: "0 0" }, { translate: "0 " + a + "px" }, { translate: "0 " + (-a * 0.6) + "px" }, { translate: a * 0.4 + "px 0" }, { translate: "0 0" }], { duration: 260, easing: "ease-out" }); } catch (er) {} }
+
+  function pawEnter(act, vw, vh) { /* 巨大的猫爪从屏幕外伸进来，“啪”地按在窗口该在的位置，抬起后窗口留在原地 */
+    pqAdd(act, function (me, done) {
+      var el = act.el, tx = act.cx, ty = act.cy, w = act.w, pw = Math.max(96, Math.min(170, w * 0.5)), cell = pw / 20, cf = catCfg("a");
+      var paw = mk("div", "bigpaw", pawSvg(cell, cf.fur, "#ff9fb5", false)), sh = mk("div", "pawshadow"), side = (act.idx % 2 ? 1 : -1);
+      paw.style.cssText = "left:" + tx + "px;top:" + ty + "px"; sh.style.cssText = "left:" + tx + "px;top:" + ty + "px;width:" + pw * 1.1 + "px;height:" + pw * 1.1 + "px";
+      stage.appendChild(sh); stage.appendChild(paw); me.els.push(paw, sh);
+      var r0 = side * 14, from = "translate(-50%,-50%) translate(" + side * 40 + "px," + -(ty + pw) + "px) scale(1.7) rotate(" + r0 + "deg)";
+      try { sh.animate([{ transform: "translate(-50%,-50%) scale(.3)", opacity: 0 }, { transform: "translate(-50%,-50%) scale(1)", opacity: 0.32 }], { duration: 340, easing: "ease-in", fill: "forwards" }); } catch (e) {}
+      var a = paw.animate([{ transform: from }, { transform: "translate(-50%,-50%) scale(1) rotate(0deg)" }], { duration: 340, easing: "cubic-bezier(.5,0,.9,.6)", fill: "forwards" });
+      a.onfinish = function () {
+        if (me.dead) return;
+        /* 啪！ */
+        sfxThud(1.1, 0.9); sfxMeow("short", [0, 2, 4, 7, 9][act.idx % 5]); shakeStage(3 + Math.min(3, w / 120));
+        var st = mk("div", "pawstamp", pawSvg(Math.max(3, pw / 30), "#d98aa0", "", true)); /* 肉垫印留在窗口后面 */
+        st.style.cssText = "left:" + tx + "px;top:" + ty + "px;--r:" + (side * 12) + "deg"; stage.appendChild(st);
+        for (var i = 0; i < 8; i++) {
+          var d = mk("i", "kdust"), sz = 9 + Math.random() * 8, sd = i % 2 ? 1 : -1;
+          d.style.cssText = "left:" + (tx + sd * pw * (0.3 + Math.random() * 0.3)) + "px;top:" + (ty + pw * 0.35) + "px;width:" + sz + "px;height:" + sz + "px"; stage.appendChild(d); me.els.push(d);
+          try { var da = d.animate([{ transform: "translate(-50%,-50%) scale(.4)", opacity: 0.7 }, { transform: "translate(calc(-50% + " + sd * (14 + Math.random() * 30) + "px),calc(-50% - " + (6 + Math.random() * 16) + "px)) scale(1.5)", opacity: 0 }], { duration: 500, easing: "ease-out" }); da.onfinish = (function (d) { return function () { rmEl(d); }; })(d); } catch (e) { rmEl(d); }
+        }
+        act.show();
+        try { el.animate([{ opacity: 0, transform: "scale(.6,.5)" }, { opacity: 1, transform: "scale(1.06,.94)", offset: 0.45 }, { opacity: 1, transform: "none" }], { duration: 360, easing: "ease-out", fill: "backwards" }); } catch (e) {}
+        pqTimer(me, function () { act.land(); }, 120);
+        pqTimer(me, function () { /* 爪子抬起，缩回屏幕外 */
+          sh.style.opacity = 0; sh.style.transition = "opacity .3s";
+          var b = paw.animate([{ transform: "translate(-50%,-50%) scale(1) rotate(0deg)", opacity: 1 }, { transform: "translate(-50%,-50%) translate(" + -side * 30 + "px," + -(ty + pw) + "px) scale(1.5) rotate(" + -r0 + "deg)", opacity: 1 }], { duration: 380, easing: "ease-in", fill: "forwards" });
+          b.onfinish = function () { rmEl(paw); rmEl(sh); };
+          done();
+        }, 160);
+      };
+    });
+  }
+
+  function balloonEnter(act, vw, vh) { /* 窗口挂在一串气球下面从屏幕下方飘上来，到位后气球“啵”地破掉 */
+    pqAdd(act, function (me, done) {
+      var el = act.el, tx = act.cx, ty = act.cy, h = act.h, topF = ty - h / 2, z0 = el.style.zIndex;
+      var COLS = ["#ff7a9c", "#ffc24a", "#6cc3ff", "#8ee39a", "#c49bff"], n = 3, bs = [], i, svg = "";
+      for (i = 0; i < n; i++) { var bx = (i - 1) * 30 + (Math.random() - 0.5) * 8, by = -78 - (i === 1 ? 20 : 0) - Math.random() * 10; bs.push({ x: bx, y: by, c: COLS[(act.idx + i * 2) % COLS.length] }); }
+      bs.forEach(function (b) {
+        svg += '<path d="M' + b.x + "," + (b.y + 22) + " Q" + (b.x * 0.4) + "," + (b.y * 0.4) + ' 0,0" fill="none" stroke="#9aa3b5" stroke-width="1.4"/><ellipse cx="' + b.x + '" cy="' + b.y + '" rx="15" ry="19" fill="' + b.c + '" stroke="rgba(0,0,0,.25)" stroke-width="1.5"/><ellipse cx="' + (b.x - 5) + '" cy="' + (b.y - 7) + '" rx="3.5" ry="6" fill="rgba(255,255,255,.55)"/><path d="M' + b.x + "," + (b.y + 19) + " l-3,5 h6z\" fill=\"" + b.c + '"/>';
+      });
+      var g = mk("div", "balloons", '<svg width="2" height="2" style="overflow:visible" aria-hidden="true">' + svg + "</svg>");
+      g.style.cssText = "left:" + tx + "px;top:" + topF + "px"; stage.appendChild(g); me.els.push(g);
+      var Y0 = vh - topF + 40 + 90, dur = Math.max(1100, Math.min(1700, 800 + Y0 * 0.55)), sw = 16 + Math.random() * 8, sg = act.idx % 2 ? 1 : -1;
+      var kf = [{ transform: "translate(" + -sg * 10 + "px," + Y0 + "px)" }, { transform: "translate(" + sg * sw + "px," + Y0 * 0.55 + "px)", offset: 0.35 }, { transform: "translate(" + -sg * sw * 0.6 + "px," + Y0 * 0.18 + "px)", offset: 0.72 }, { transform: "translate(0,0)" }];
+      var opt = { duration: dur, easing: "cubic-bezier(.3,.1,.3,1)", fill: "both" };
+      el.style.zIndex = 4996; el.style.pointerEvents = "none"; act.show();
+      try { g.animate(kf, opt); } catch (e) {}
+      var a; try { a = el.animate(kf, opt); } catch (e) { a = null; }
+      sfxReel();
+      function pop() {
+        if (me.dead) return;
+        try { if (a) a.cancel(); } catch (e) {}
+        el.style.zIndex = z0; el.style.pointerEvents = "";
+        if (soundOn && AC) { var t = AC.currentTime; noiseHit(t, 0.08, 3000, 0.8, 0.22, "bandpass", 2); noiseHit(t + 0.05, 0.08, 2600, 0.8, 0.16, "bandpass", 2); noiseHit(t + 0.1, 0.08, 3400, 0.8, 0.14, "bandpass", 2); }
+        bs.forEach(function (b) {
+          for (var k = 0; k < 7; k++) {
+            var c = mk("i", "snow-chunk"), ang = Math.random() * 6.2832, d = 26 + Math.random() * 40;
+            c.style.cssText = "left:" + (tx + b.x) + "px;top:" + (topF + b.y) + "px;width:6px;height:6px;background:" + b.c + ";border-color:rgba(0,0,0,.2)"; stage.appendChild(c); me.els.push(c);
+            try { var ca = c.animate([{ transform: "translate(-50%,-50%)", opacity: 1 }, { transform: "translate(calc(-50% + " + (Math.cos(ang) * d).toFixed(1) + "px),calc(-50% + " + (Math.sin(ang) * d + 30).toFixed(1) + "px)) rotate(" + ((Math.random() - 0.5) * 400).toFixed(0) + "deg)", opacity: 0 }], { duration: 600 + Math.random() * 300, easing: "ease-out" }); ca.onfinish = (function (c) { return function () { rmEl(c); }; })(c); } catch (e) { rmEl(c); }
+          }
+        });
+        rmEl(g);
+        el.style.transformOrigin = "50% 100%";
+        try { var b2 = el.animate([{ transform: "translateY(-10px)" }, { transform: "translateY(2px) scale(1.03,.96)", offset: 0.5 }, { transform: "none" }], { duration: 380, easing: "ease-out" }); b2.onfinish = b2.oncancel = function () { el.style.transformOrigin = ""; }; } catch (e) { el.style.transformOrigin = ""; }
+        sfxMeow("happy", [0, 2, 4, 7, 9][act.idx % 5]); act.land(); done();
+      }
+      pqTimer(me, pop, dur);
+    });
+  }
+
   /* ---- 小猫打翻东西：小猫跳上桌子，把窗口一个个推下去，窗口带着重量摔在地上 ---- */
   var kn = null;
+  /* 出场方式：carry 叼信 / knock 打翻 / angler 钓鱼 / snow 雪球；开了“出场方式随机”就每次播放随机换一种 */
+  var entryMode = "carry", lastEntry = "";
+  function pickEntry() {
+    var m;
+    if (state.entryRand) { var pool = ["carry", "knock", "angler", "snow", "yarn", "paw", "balloon"].filter(function (x) { return x !== lastEntry; }); m = pool[Math.floor(Math.random() * pool.length)]; }
+    else m = state.knock ? "knock" : state.angler ? "angler" : state.snow ? "snow" : state.yarn ? "yarn" : state.paw ? "paw" : state.balloon ? "balloon" : "carry";
+    return (lastEntry = m);
+  }
   /* 闷响：一记下坠的低频正弦 + 一小撮低通噪声；窗口越大越沉 */
   function sfxThud(m, v) {
     if (!soundOn || !AC) return;
@@ -935,11 +1515,11 @@
   }
   function knockHalt() { if (kn && !kn.finished) { kn.cleanup(); kn.abort(); } }
   function knockRerun() {
-    if (!catOn() || !state.knock || (kn && !kn.finished) || !stage.querySelector(".win.knocked:not(.fin)")) return;
+    if (!catOn() || entryMode !== "knock" || (kn && !kn.finished) || !stage.querySelector(".win.knocked:not(.fin)")) return;
     knockStart(stage.clientWidth, stage.clientHeight, 0, runTok, { loop: true });
   }
   /* 推窗口的队列全部落地、小猫离开之后再继续后面的（压轴、拼图、署名） */
-  function knockWhenDone(cb) { if (kn && !kn.finished) kn.waiters.push(cb); else cb(); }
+  function knockWhenDone(cb) { if (kn && !kn.finished) kn.waiters.push(cb); else if (fq && !fq.finished && !fq.dead) fq.waiters.push(cb); else if (sq && !sq.finished && !sq.dead) sq.waiters.push(cb); else if (yq && !yq.finished && !yq.dead) yq.waiters.push(cb); else if (pq && !pq.finished && !pq.dead) pq.waiters.push(cb); else cb(); }
   function knockAdd(it) { if (kn) { kn.q.push(it); kn.pump(); } }
   function knockStart(vw, vh, total, tok, opt) {
     opt = opt || {};
@@ -1544,7 +2124,14 @@
         if (!ended) askBlow();
       };
       function pt(e) { var r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * H / r.height]; }
+      var wishPts = [], wsId = 0;
+      function recWish(px, py) { /* 记下笔迹采样点（相对屏幕的比例），之后在烟花里变成星星 */
+        var cx = px / dpr, cy = py / dpr, lp = wishPts[wishPts.length - 1];
+        if (lp && lp.s === wsId && Math.abs(lp.x * vw - cx) + Math.abs(lp.y * vh - cy) < Math.max(9, bw / dpr * 0.7)) return;
+        if (wishPts.length < 700) wishPts.push({ x: cx / vw, y: cy / vh, s: wsId });
+      }
       function wipe(x0, y0, x1, y1) { /* 手指划过的地方，雾被擦开 */
+        recWish(x1, y1);
         g.globalCompositeOperation = "destination-out"; g.lineCap = "round"; g.lineJoin = "round"; g.strokeStyle = "#000"; g.lineWidth = bw;
         g.shadowColor = "#000"; g.shadowBlur = bw * 0.45; g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1 + 0.01, y1); g.stroke(); g.shadowBlur = 0;
         g.globalCompositeOperation = "source-over";
@@ -1560,7 +2147,7 @@
       }
       cv.addEventListener("pointerdown", function (e) {
         if (!ready || sealing) return; e.preventDefault(); drawing = true; try { cv.setPointerCapture(e.pointerId); } catch (x) {}
-        var p = pt(e); lx = p[0]; ly = p[1]; wipe(lx, ly, lx, ly);
+        var p = pt(e); lx = p[0]; ly = p[1]; wsId++; wipe(lx, ly, lx, ly);
         if (!started) { started = true; hint.textContent = "写下你的心愿……写完点「许好了」"; }
       });
       cv.addEventListener("pointermove", function (e) {
@@ -1572,10 +2159,10 @@
       function up() { drawing = false; }
       cv.addEventListener("pointerup", up); cv.addEventListener("pointercancel", up);
       re.addEventListener("click", function (e) {
-        e.stopPropagation(); if (sealing) return; drips = []; g.globalCompositeOperation = "source-over"; g.drawImage(fogCv, 0, 0); ink = 0; ok.disabled = true; sfxPuff(); hint.textContent = "雾又蒙上了，重新写吧";
+        e.stopPropagation(); if (sealing) return; drips = []; g.globalCompositeOperation = "source-over"; g.drawImage(fogCv, 0, 0); ink = 0; wishPts = []; ok.disabled = true; sfxPuff(); hint.textContent = "雾又蒙上了，重新写吧";
       });
       ok.addEventListener("click", function (e) {
-        e.stopPropagation(); if (sealing || ok.disabled) return; sealing = true; drawing = false; drips = []; btns.style.visibility = "hidden"; skip.style.visibility = "hidden";
+        e.stopPropagation(); if (sealing || ok.disabled) return; sealing = true; drawing = false; drips = []; wishStars = wishPts.slice(); btns.style.visibility = "hidden"; skip.style.visibility = "hidden";
         hint.textContent = "雾气把愿望悄悄收走了 ✨"; sfxDing(4); sfxDing(2); cb.setMood("happy"); say("喵～", 1200);
         var t0 = Date.now();
         (function condense() {
@@ -1644,7 +2231,7 @@
   }
 
   /* ---- 压轴烟花：窗口炸成烟花，再聚成那句话和一颗心 ---- */
-  var fwOn = false;
+  var fwOn = false, wishStars = null; /* wishStars：许愿时写在雾上的笔迹，只放在内存里，烟花用完就丢 */
   function sfxBoom() {
     if (!soundOn || !AC) return;
     var t = AC.currentTime; tone(90, t, 0.4, 0.12, "sine"); tone(1800 + Math.random() * 900, t, 0.1, 0.03, "square");
@@ -1670,12 +2257,77 @@
     });
     return pts;
   }
+  function showMemoryWall(photos, onDone) {
+    if (!photos || !photos.length) { if (onDone) onDone(); return; }
+    var wall = document.createElement("section"); wall.className = "memory-wall";
+    wall.setAttribute("aria-label", "回忆照片墙");
+    wall.innerHTML = '<div class="mw-head"><span class="mw-kicker">OUR LITTLE MEMORIES</span><h2>把我们的回忆，挂起来 ♡</h2><p>每一张照片，都是想珍藏的瞬间</p></div><div class="mw-scene"><div class="mw-rope"></div><div class="mw-cat"></div><div class="mw-track" role="region" aria-label="左右滑动浏览照片" tabindex="0"></div></div><button class="mw-done" type="button">收藏好啦 ♥</button><div class="mw-tip">← 左右滑动，看看我们的回忆 →</div>';
+    document.body.appendChild(wall);
+    var track = wall.querySelector(".mw-track"), catHost = wall.querySelector(".mw-cat");
+    try { var cat = catBox(Math.max(4, Math.min(6, Math.round(window.innerWidth / 90))), catCfg("c"), "happy", "#ffd36b"); catHost.appendChild(cat); } catch (e) { catHost.textContent = "🐱"; }
+    photos.forEach(function (photo, i) {
+      var card = document.createElement("figure"); card.className = "mw-photo"; card.style.setProperty("--tilt", (((i % 5) - 2) * 1.8) + "deg");
+      var clip = document.createElement("span"); clip.className = "mw-clip"; clip.setAttribute("aria-hidden", "true");
+      var img = document.createElement("img"); img.src = photo.src; img.alt = photo.caption || "回忆照片"; img.loading = "eager"; img.draggable = false;
+      var cap = document.createElement("figcaption"); cap.textContent = photo.caption || "♡";
+      card.appendChild(clip); card.appendChild(img); card.appendChild(cap); track.appendChild(card);
+    });
+    /* 触屏原生横向滚动；鼠标按住拖动，避免影响照片点击 */
+    var down = false, startX = 0, startScroll = 0, moved = false;
+    track.addEventListener("pointerdown", function (e) { if (e.pointerType === "mouse") { down = true; moved = false; startX = e.clientX; startScroll = track.scrollLeft; track.classList.add("dragging"); track.setPointerCapture(e.pointerId); } });
+    track.addEventListener("pointermove", function (e) { if (!down) return; var dx = e.clientX - startX; if (Math.abs(dx) > 3) moved = true; track.scrollLeft = startScroll - dx; });
+    function stopDrag() { down = false; track.classList.remove("dragging"); }
+    track.addEventListener("pointerup", stopDrag); track.addEventListener("pointercancel", stopDrag); track.addEventListener("lostpointercapture", stopDrag);
+    wall.querySelector(".mw-done").addEventListener("click", function () {
+      wall.classList.add("mw-leave"); setTimeout(function () { wall.remove(); if (onDone) onDone(); }, 650);
+    });
+    requestAnimationFrame(function () { wall.classList.add("mw-show"); });
+  }
+
+  /* ---- 愿望变星星：许愿时写在雾上的笔迹，在烟花里飞上夜空，连成一小片星座，再散成满天星 ---- */
+  var glowCv = null;
+  function glowSprite() {
+    if (glowCv) return glowCv;
+    var c = document.createElement("canvas"); c.width = c.height = 48;
+    var g = c.getContext("2d"), r = g.createRadialGradient(24, 24, 0, 24, 24, 24);
+    r.addColorStop(0, "rgba(255,243,214,1)"); r.addColorStop(0.25, "rgba(255,226,160,.55)"); r.addColorStop(1, "rgba(255,226,160,0)");
+    g.fillStyle = r; g.fillRect(0, 0, 48, 48); return (glowCv = c);
+  }
+  function prepWish(vw, vh) {
+    var raw = wishStars; wishStars = null; /* 用一次就丢，不保存、不上传 */
+    if (!state.wishStar || !raw || !raw.length) return null;
+    var pts = raw, i;
+    if (raw.length > 120) { var k = raw.length / 120; pts = []; for (i = 0; i < 120; i++) pts.push(raw[Math.floor(i * k)]); }
+    var minX = 1e9, maxX = -1e9, minY = 1e9, maxY = -1e9;
+    pts.forEach(function (p) { var x = p.x * vw, y = p.y * vh; minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); });
+    var bw = Math.max(1, maxX - minX), bh = Math.max(1, maxY - minY), W = Math.min(vw * 0.6, 380), H = Math.min(vh * 0.13, 110);
+    var sc = Math.min(0.9, W / bw, H / bh), mx = (minX + maxX) / 2, my = (minY + maxY) / 2, cyC = vh * 0.15;
+    var hx = vw / 2, hy = vh * 0.27, hr = Math.min(vw * 0.32, vh * 0.2) * 1.2; /* 心形出现的位置，散开的星星避开它 */
+    var stars = pts.map(function (p, i) {
+      var x = p.x * vw, y = p.y * vh, rx, ry, tries = 0;
+      do { rx = 14 + Math.random() * (vw - 28); ry = 12 + Math.random() * vh * 0.5; tries++; } while (tries < 10 && Math.abs(rx - hx) < hr && Math.abs(ry - hy) < hr);
+      return { sx: x, sy: y, cx: vw / 2 + (x - mx) * sc, cy: cyC + (y - my) * sc, rx: rx, ry: ry, s: p.s, d1: i / pts.length * 500, d2: Math.random() * 500, size: 1.5 + Math.random() * 1.3, ph: Math.random() * 6.28, px: x, py: y };
+    });
+    return { stars: stars, capY: cyC + (maxY - minY) * sc / 2 + 26 };
+  }
   function fireworks(text, onEnd) {
     if (fwOn) return; fwOn = true;
+    /* 烟花开始前先记下所有图片窗口；窗口随后会炸成粒子并移除 */
+    var memoryPhotos = Array.prototype.slice.call(stage.querySelectorAll(".win .mimg")).map(function (img) {
+      var fig = img.closest(".body, .win"), cap = fig && fig.querySelector(".cap, .pcap");
+      return { src: img.currentSrc || img.src, caption: cap ? cap.textContent.trim() : (img.alt || "") };
+    }).filter(function (p) { return !!p.src; });
     var vw = window.innerWidth, vh = window.innerHeight, dpr = Math.min(window.devicePixelRatio || 1, 2);
     var sky = document.createElement("div"); sky.className = "fw-sky";
     var cv = document.createElement("canvas"); cv.className = "fw-cv"; cv.width = vw * dpr; cv.height = vh * dpr;
-    document.body.appendChild(sky); document.body.appendChild(cv);
+    var wish = prepWish(vw, vh), wcv = null, wg = null, wcap = null, glow = null;
+    document.body.appendChild(sky);
+    if (wish) { /* 愿望星星单独一层画布，不被烟花的拖尾擦掉 */
+      wcv = document.createElement("canvas"); wcv.className = "fw-cv"; wcv.width = vw * dpr; wcv.height = vh * dpr; document.body.appendChild(wcv);
+      wg = wcv.getContext("2d"); wg.setTransform(dpr, 0, 0, dpr, 0, 0); glow = glowSprite();
+      wcap = document.createElement("div"); wcap.className = "fw-wishcap"; wcap.textContent = "你许下的愿望，飞上了夜空 ✨"; wcap.style.top = Math.round(wish.capY) + "px"; document.body.appendChild(wcap);
+    }
+    document.body.appendChild(cv);
     var x = cv.getContext("2d"); x.setTransform(dpr, 0, 0, dpr, 0, 0);
     requestAnimationFrame(function () { sky.classList.add("on"); });
     var fc = null, fcBox = null, lastHop = 0, scared = false, looking = false;
@@ -1704,6 +2356,7 @@
       for (var i = 0; i < n; i++) { var a = Math.random() * 6.2832, s = sp * (0.35 + Math.random() * 0.65); P.push({ x: bx, y: by, vx: Math.cos(a) * s, vy: Math.sin(a) * s, c: Math.random() < 0.5 ? c1 : c2, sz: 2 + Math.random() * 2, a: 1, age: 0, life: 90 + Math.random() * 40 }); }
       sfxBoom();
     }
+    if (wish) { tms.push(setTimeout(function () { if (wcap) wcap.classList.add("on"); }, 1100)); tms.push(setTimeout(function () { if (wcap) wcap.classList.remove("on"); }, 3300)); }
     /* 1) 窗口先炸开 */
     var r0 = stage.getBoundingClientRect();
     Array.prototype.slice.call(stage.querySelectorAll(".win:not(.fin)")).forEach(function (w, i) {
@@ -1725,12 +2378,34 @@
     sky.addEventListener("click", end);
     function end() {
       if (ended) return; ended = true; tms.forEach(clearTimeout);
-      sky.classList.remove("on"); cv.classList.add("off");
-      setTimeout(function () { cancelAnimationFrame(raf); sky.remove(); cv.remove(); if (fc) fc.remove(); if (res) res.el.style.visibility = ""; fwOn = false; if (onEnd) onEnd(); }, 900);
+      sky.classList.remove("on"); cv.classList.add("off"); if (wcv) wcv.classList.add("off"); if (wcap) wcap.classList.remove("on");
+      setTimeout(function () { cancelAnimationFrame(raf); sky.remove(); cv.remove(); if (wcv) wcv.remove(); if (wcap) wcap.remove(); if (fc) fc.remove(); if (res) res.el.style.visibility = ""; fwOn = false; showMemoryWall(memoryPhotos, onEnd); }, 900);
+    }
+    function drawWish(now) {
+      if (!wg) return;
+      var el = now - T0, A = wish.stars, i, s, a, f, gg, x0, y0, sz;
+      function ease(t) { t = Math.max(0, Math.min(1, t)); return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
+      wg.clearRect(0, 0, vw, vh); wg.globalCompositeOperation = "lighter";
+      var la = Math.max(0, Math.min(1, (el - 2300) / 600)) * (1 - Math.max(0, Math.min(1, (el - 3500) / 600))); /* 星座连线只在中间出现一会儿 */
+      for (i = 0; i < A.length; i++) {
+        s = A[i]; f = ease((el - 700 - s.d1) / 1500); gg = ease((el - 3500 - s.d2) / 1700);
+        x0 = s.sx + (s.cx - s.sx) * f; y0 = s.sy + (s.cy - s.sy) * f - Math.sin(Math.PI * f) * 22;
+        s.px = x0 + (s.rx - x0) * gg; s.py = y0 + (s.ry - y0) * gg;
+        a = Math.min(1, el / 600) * (0.7 + 0.3 * Math.sin(now / 260 + s.ph)); sz = s.size + (1 - f) * 1.4;
+        wg.globalAlpha = a * 0.6; wg.drawImage(glow, s.px - sz * 4, s.py - sz * 4, sz * 8, sz * 8);
+        wg.globalAlpha = a; wg.fillStyle = "#fff3d6"; wg.fillRect(s.px - sz / 2, s.py - sz / 2, sz, sz);
+        if (gg > 0.95 && Math.sin(now / 260 + s.ph) > 0.85) { wg.fillRect(s.px - sz * 1.8, s.py - 0.5, sz * 3.6, 1); wg.fillRect(s.px - 0.5, s.py - sz * 1.8, 1, sz * 3.6); }
+      }
+      if (la > 0.01) {
+        wg.globalAlpha = 0.4 * la; wg.strokeStyle = "#fff3d6"; wg.lineWidth = 1; wg.beginPath();
+        for (i = 1; i < A.length; i++) if (A[i].s === A[i - 1].s) { wg.moveTo(A[i - 1].px, A[i - 1].py); wg.lineTo(A[i].px, A[i].py); }
+        wg.stroke();
+      }
+      wg.globalAlpha = 1;
     }
     function frame() {
       raf = requestAnimationFrame(frame);
-      var now = performance.now();
+      var now = performance.now(); drawWish(now);
       x.globalCompositeOperation = "destination-out"; x.fillStyle = "rgba(0,0,0,0.22)"; x.fillRect(0, 0, vw, vh);
       x.globalCompositeOperation = "lighter";
       rockets = rockets.filter(function (r) {
@@ -2035,6 +2710,7 @@
   var runTok = 0;
   function run() {
     if (partyAbort) partyAbort();
+    fishAbort(); snowAbort(); yarnAbort(); pqAbort();
     syncBgm();
     var tok = ++runTok;
     stopVoices();
@@ -2050,6 +2726,7 @@
     var myTok = runTok;
     if (wandAbort) wandAbort();
     if (kn) { kn.abort(); kn = null; }
+    fishAbort(); snowAbort(); yarnAbort(); pqAbort(); wishStars = null;
     var vw = stage.clientWidth, vh = stage.clientHeight;
     if (state.pets) spawnPets(vw, vh);
     res = null; if (state.cats) spawnResident(vw, vh);
@@ -2059,8 +2736,13 @@
     var baseW = Math.round(Math.min(320, vw * 0.66));
     puz = null;
     if (state.puzzle && fin) setupPuzzle(seq, n, vw);
-    var knockN = fin ? n - 1 : n, knockOn = catOn() && state.knock && knockN > 0;
+    var knockN = fin ? n - 1 : n, catRun = catOn() && knockN > 0, mode = pickEntry(); entryMode = mode;
+    var knockOn = catRun && mode === "knock", fishOn = catRun && mode === "angler", snowOn = catRun && mode === "snow", yarnOn = catRun && mode === "yarn", pawOn = catRun && mode === "paw", balOn = catRun && mode === "balloon";
     if (knockOn) knockStart(vw, vh, knockN, myTok);
+    if (fishOn) fishStart(vw, vh, knockN, myTok);
+    if (snowOn) snowStart(vw, vh, knockN, myTok);
+    if (yarnOn) yarnStart(vw, vh, knockN, myTok);
+    if (pawOn || balOn) pqStart(knockN);
     seq.forEach(function (it, i) {
       var isFin = fin && i === n - 1;
       var delay = reduce ? 0 : 250 + i * state.gap + (isFin ? 350 : 0);
@@ -2092,6 +2774,22 @@
               if (puz && puz.cover[i] != null) { zTop++; bring(el); addShard(puz.cover[i], el, vw, vh); }
               if (it.m && it.m.kind === "voice" && state.autoVoice && el._autoplay) el._autoplay();
             } });
+            return;
+          }
+          if ((fishOn || snowOn || yarnOn || pawOn || balOn) && !isFin) { /* 钓鱼 / 雪球：窗口的入场动画由小猫的场景自己驱动 */
+            el.classList.add("entered");
+            var act = {
+              el: el, cx: el.offsetLeft + el.offsetWidth / 2, cy: el.offsetTop + el.offsetHeight / 2, w: el.offsetWidth, h: el.offsetHeight, idx: i,
+              show: function () { if (myTok === runTok) el.style.visibility = ""; },
+              land: function () {
+                if (myTok !== runTok) return;
+                sfxDing(i);
+                if (puz && puz.cover[i] != null) addShard(puz.cover[i], el, vw, vh);
+                if (it.m && it.m.kind === "voice" && state.autoVoice && el._autoplay) el._autoplay();
+              },
+              quick: function () { act.show(); act.land(); }
+            };
+            if (pawOn) pawEnter(act, vw, vh); else if (balOn) balloonEnter(act, vw, vh); else (fishOn ? fishAdd : snowOn ? snowAdd : yarnAdd)(act);
             return;
           }
           var go = function () { catDeliver(el.offsetLeft + el.offsetWidth / 2, el.offsetTop + el.offsetHeight / 2, isFin ? "box" : "letter", reveal, i); };
@@ -2389,7 +3087,7 @@
     fLayout.value = state.layout; fTo.value = state.to; fFrom.value = state.from; fEnv.checked = state.envelope; fFin.checked = state.finale; fFx.checked = state.fx; fGap.value = state.gap; fPets.checked = state.pets; gapVal.textContent = (state.gap / 1000).toFixed(2);
     draftSkin = state.skin; renderSkinChips();
     draftMedia = clone(state.media); fAutoVoice.checked = state.autoVoice; renderMediaList(); recLabel();
-    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fFish").checked = state.fish; document.getElementById("fRand").checked = state.randGame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; document.getElementById("fWish").checked = state.wish; fCats.checked = state.cats; fFw.checked = state.fireworks; fAccept.value = state.accept || ""; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm(); draftSelfie = state.selfiePhoto ? clone(state.selfiePhoto) : null; renderSelfie();
+    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fFish").checked = state.fish; document.getElementById("fRand").checked = state.randGame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; document.getElementById("fWish").checked = state.wish; document.getElementById("fWishStar").checked = state.wishStar; document.getElementById("fAngler").checked = state.angler; document.getElementById("fSnow").checked = state.snow; document.getElementById("fYarn").checked = state.yarn; document.getElementById("fPaw").checked = state.paw; document.getElementById("fBalloon").checked = state.balloon; document.getElementById("fEntryRand").checked = state.entryRand; syncEntryUi(); fCats.checked = state.cats; fFw.checked = state.fireworks; fAccept.value = state.accept || ""; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm(); draftSelfie = state.selfiePhoto ? clone(state.selfiePhoto) : null; renderSelfie();
     modeNote.textContent = "这里的修改保存在你自己的浏览器里；点「分享」会把当前内容存到云端，生成发给 TA 的链接。";
   }
   function closeAll() {
@@ -2421,7 +3119,7 @@
       layout: fLayout.value, to: fTo.value.trim(), from: fFrom.value.trim(), envelope: fEnv.checked, finale: fFin.checked, fx: fFx.checked,
       msgs: lines.length ? lines : DEFAULTS.msgs.slice(),
       media: normMedia(draftMedia.filter(function (m) { return mediaSrc(m); })), autoVoice: fAutoVoice.checked,
-      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, accept: fAccept.value.trim().slice(0, 200), cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, fish: document.getElementById("fFish").checked, randGame: document.getElementById("fRand").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked, selfie: document.getElementById("fSelfie").checked, cake: document.getElementById("fCake").checked, wish: document.getElementById("fWish").checked,
+      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, accept: fAccept.value.trim().slice(0, 200), cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, fish: document.getElementById("fFish").checked, randGame: document.getElementById("fRand").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked, selfie: document.getElementById("fSelfie").checked, cake: document.getElementById("fCake").checked, wish: document.getElementById("fWish").checked, wishStar: document.getElementById("fWishStar").checked, angler: document.getElementById("fAngler").checked, snow: document.getElementById("fSnow").checked, yarn: document.getElementById("fYarn").checked, paw: document.getElementById("fPaw").checked, balloon: document.getElementById("fBalloon").checked, entryRand: document.getElementById("fEntryRand").checked,
       selfiePhoto: draftSelfie && mediaSrc(draftSelfie) ? normPhoto(draftSelfie) : null,
       bgm: draftBgm && mediaSrc(draftBgm) ? normBgm(draftBgm) : null
     };
@@ -2449,7 +3147,7 @@
   function useTemplate(id) {
     var t = TEMPLATES[id];
     undoState = clone(state);
-    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, accept: state.accept, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, fish: state.fish, randGame: state.randGame, catVoice: state.catVoice, knock: state.knock, selfie: state.selfie, cake: state.cake, wish: state.wish, selfiePhoto: state.selfiePhoto ? clone(state.selfiePhoto) : null, bgm: state.bgm ? clone(state.bgm) : null };
+    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, accept: state.accept, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, fish: state.fish, randGame: state.randGame, catVoice: state.catVoice, knock: state.knock, selfie: state.selfie, cake: state.cake, wish: state.wish, wishStar: state.wishStar, angler: state.angler, snow: state.snow, yarn: state.yarn, paw: state.paw, balloon: state.balloon, entryRand: state.entryRand, selfiePhoto: state.selfiePhoto ? clone(state.selfiePhoto) : null, bgm: state.bgm ? clone(state.bgm) : null };
     closeAll();
     persist(next).then(function () { play(); showToast("已套用「" + t.name + "」", true); });
   }
@@ -2628,6 +3326,21 @@
       if (setTemplates(rows)) { DEFAULTS = mkDefaults(); try { localStorage.setItem(TKEY, JSON.stringify(rows)); } catch (e) {} }
     }).catch(function () {});
   }
+  /* 三种“小猫演出来的出场方式”三选一；开了“出场方式随机”时，这三项不再起作用 */
+  var ENTRY_IDS = ["fKnock", "fAngler", "fSnow", "fYarn", "fPaw", "fBalloon"];
+  function syncEntryUi() {
+    var rnd = document.getElementById("fEntryRand").checked;
+    ENTRY_IDS.forEach(function (id) { var c = document.getElementById(id); c.disabled = rnd; c.parentNode.style.opacity = rnd ? 0.45 : ""; });
+  }
+  (function () {
+    ENTRY_IDS.forEach(function (id) {
+      document.getElementById(id).addEventListener("change", function (e) {
+        if (!e.target.checked) return;
+        ENTRY_IDS.forEach(function (o) { if (o !== id) document.getElementById(o).checked = false; });
+      });
+    });
+    document.getElementById("fEntryRand").addEventListener("change", syncEntryUi);
+  })();
   function init() {
     local = readLocal();
     if (sharePromise) sharePromise.then(function (d) { var s = norm(d); if (s) startViewer(s); else badLink(); }, badLink);

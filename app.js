@@ -33,7 +33,7 @@
   function tplOf(id) { return TEMPLATES[id] || TEMPLATES[defSkin()]; }
   function mkDefaults() {
     var id = defSkin(), t = TEMPLATES[id];
-    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, catVoice: true, knock: true };
+    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, catVoice: true, knock: true, selfie: true, cake: true };
   }
   var DEFAULTS = mkDefaults();
 
@@ -149,7 +149,9 @@
       wand: o.wand !== false,
       boxgame: o.boxgame !== false,
       catVoice: o.catVoice !== false,
-      knock: o.knock !== false
+      knock: o.knock !== false,
+      selfie: o.selfie !== false,
+      cake: o.cake !== false
     };
   }
   function sig(s) { return JSON.stringify(s); }
@@ -1113,6 +1115,296 @@
     };
   }
 
+  /* ---- 拍立得合影 + 爱心蛋糕：点「愿意」之后、烟花之前 ---- */
+  var partyAbort = null, micCtx = null;
+  function mk(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+  function micUnlock() { /* 必须在点击「愿意」的那一下里创建，iOS 才允许之后用麦克风 */
+    if (micCtx) return; var A = window.AudioContext || window.webkitAudioContext; if (!A) return;
+    try { micCtx = new A(); if (micCtx.state === "suspended") micCtx.resume(); } catch (e) { micCtx = null; }
+  }
+  function micClose() { if (micCtx) { try { micCtx.close(); } catch (e) {} micCtx = null; } }
+  function partyShell(cls, hintText) {
+    var ov = mk("div", "party " + cls, '<div class="wg-hint"></div><button type="button" class="wg-skip">跳过</button>');
+    ov.querySelector(".wg-hint").textContent = hintText;
+    document.body.appendChild(ov); if (res) res.el.style.visibility = "hidden";
+    return ov;
+  }
+  function partyClose(ov, done) {
+    partyAbort = null; ov.classList.add("off");
+    setTimeout(function () { ov.remove(); if (res) res.el.style.visibility = ""; done(); }, 420);
+  }
+  function svgImg(svg) { /* 把带 CSS 变量的像素 SVG 变成能画进 canvas 的图片 */
+    return new Promise(function (ok) {
+      var cs = getComputedStyle(root);
+      var s = svg.replace(/var\((--[\w-]+)\)/g, function (m, n) { return (cs.getPropertyValue(n) || "").trim() || "#888"; })
+        .replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges" ');
+      var im = new Image(); im.onload = function () { ok(im); }; im.onerror = function () { ok(null); };
+      im.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(s);
+    });
+  }
+  function pinkHeart(px) { return sprite("heart", px, "--pet-a").replace(/var\(--pet-a\)/g, "#ff7fa6"); }
+  function sfxShutter() {
+    if (!soundOn || !AC) return; var t = AC.currentTime; tone(2200, t, 0.03, 0.07, "square"); tone(1100, t + 0.05, 0.06, 0.06, "square");
+  }
+  function sfxPuff() {
+    if (!soundOn || !AC) return; var t = AC.currentTime, n = Math.floor(AC.sampleRate * 0.35), buf = AC.createBuffer(1, n, AC.sampleRate), d = buf.getChannelData(0);
+    for (var i = 0; i < n; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 2) * 0.5;
+    var s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain(); s.buffer = buf; f.type = "bandpass"; f.frequency.value = 900; g.gain.value = 0.35;
+    s.connect(f); f.connect(g); g.connect(master); s.start(t);
+  }
+
+  /* 画出那张合影：白边 + 小猫 + 手写字，存成 PNG */
+  function polaroidCanvas() {
+    var S = 2, W = 720, pad = 36, pw = W - pad * 2, ph = 600, H = pad + ph + 170, u = pw / 24;
+    var cv = document.createElement("canvas"); cv.width = W * S; cv.height = H * S;
+    var x = cv.getContext("2d"); x.scale(S, S); x.imageSmoothingEnabled = false;
+    var cs = getComputedStyle(root);
+    function cvar(n, fb) { return (cs.getPropertyValue(n) || "").trim() || fb; }
+    var fontP = document.fonts && document.fonts.load
+      ? Promise.race([document.fonts.load('40px "Ma Shan Zheng"', "你们的小猫合影"), new Promise(function (r) { setTimeout(r, 1200); })]).catch(function () {}) : Promise.resolve();
+    return Promise.all([svgImg(catSvg(Math.round(u * S), catCfg("a"), "happy")), svgImg(pinkHeart(Math.round(u * 0.8 * S))), fontP]).then(function (r) {
+      var catIm = r[0], hIm = r[1], gy = pad + ph * 0.86;
+      x.fillStyle = "#fffdf8"; x.fillRect(0, 0, W, H);
+      x.save(); x.beginPath(); x.rect(pad, pad, pw, ph); x.clip();
+      var g = x.createLinearGradient(pad, pad, pad + pw * 0.45, pad + ph);
+      try { g.addColorStop(0, cvar("--bg-a", "#f7f3fb")); g.addColorStop(0.55, cvar("--bg-b", "#fbeef6")); g.addColorStop(1, cvar("--bg-c", "#eef4fb")); } catch (e) { g = "#f7f3fb"; }
+      x.fillStyle = g; x.fillRect(pad, pad, pw, ph);
+      x.fillStyle = "rgba(255,255,255,.42)"; x.fillRect(pad, gy, pw, ph); x.fillStyle = "rgba(0,0,0,.07)"; x.fillRect(pad, gy, pw, 2);
+      x.textAlign = "center"; x.textBaseline = "middle";
+      [[.18, .1, "✦", 30, "#ffd36b"], [.82, .08, "✦", 24, "#ffffff"], [.5, .12, "♥", 26, "#ff9fb8"], [.3, .3, "✦", 20, "#ffffff"], [.72, .34, "♥", 22, "#ffb3c7"], [.12, .55, "♥", 20, "#ffb3c7"], [.9, .6, "✦", 26, "#ffd36b"]].forEach(function (s) {
+        x.font = s[3] + "px sans-serif"; x.fillStyle = s[4]; x.fillText(s[2], pad + pw * s[0], pad + ph * s[1]);
+      });
+      if (hIm) { var hw = hIm.width / S; x.drawImage(hIm, pad + pw * 0.07, pad + ph * 0.05, hw, hIm.height / S); x.drawImage(hIm, pad + pw * 0.93 - hw, pad + ph * 0.1, hw, hIm.height / S); }
+      x.fillStyle = "rgba(40,30,60,.18)"; x.beginPath(); x.ellipse(pad + pw / 2, gy + 4, 7 * u, 1.2 * u, 0, 0, 6.2832); x.fill();
+      if (catIm) x.drawImage(catIm, pad + (pw - 14 * u) / 2, gy - 12 * u, catIm.width / S, catIm.height / S);
+      x.restore();
+      x.strokeStyle = "rgba(0,0,0,.08)"; x.lineWidth = 2; x.strokeRect(pad, pad, pw, ph);
+      var FF = '"Ma Shan Zheng","ZCOOL KuaiLe","Kaiti SC",STKaiti,KaiTi,cursive', d = new Date(), pz = function (n) { return (n < 10 ? "0" : "") + n; };
+      var names = state.to && state.from ? state.from + " ♥ " + state.to : (state.from || state.to);
+      var sub = [names, state.cat && state.cat.name, d.getFullYear() + "." + pz(d.getMonth() + 1) + "." + pz(d.getDate())].filter(Boolean).join(" · ");
+      x.textAlign = "center"; x.textBaseline = "alphabetic"; x.fillStyle = "#3b3550"; x.font = "64px " + FF; x.fillText("你们的小猫合影", W / 2, pad + ph + 80);
+      var fs = 28; x.font = fs + "px " + FF; while (x.measureText(sub).width > pw - 20 && fs > 16) { fs -= 2; x.font = fs + "px " + FF; }
+      x.fillStyle = "#8a7a8f"; x.fillText(sub, W / 2, pad + ph + 130);
+      return cv;
+    });
+  }
+
+  /* ---- 拍立得合影：小猫和相框一起出现，倒数三秒，咔嚓 ---- */
+  function selfieGame(done) {
+    var vw = window.innerWidth, vh = window.innerHeight, ended = false, finished = false, tms = [], shotCv = null;
+    var fw = Math.max(200, Math.round(Math.min(320, vw * 0.78, (vh - 200) / 1.12))), P = fw * 0.9, PH = fw * 0.833, u = P / 24, gy = PH * 0.86;
+    var ov = partyShell("selfie", "小猫要和你们合影啦 📸");
+    var hint = ov.querySelector(".wg-hint"), skip = ov.querySelector(".wg-skip");
+    var frame = mk("div", "sf-frame", '<div class="sf-photo"><div class="sf-ground"></div><div class="sf-count"></div></div><div class="sf-cap"></div>');
+    frame.style.setProperty("--fw", fw + "px");
+    var photo = frame.querySelector(".sf-photo"), count = frame.querySelector(".sf-count");
+    frame.querySelector(".sf-ground").style.top = gy + "px";
+    var hw = 7 * u * 0.8;
+    var hl = mk("div", "sf-heart", pinkHeart(u * 0.8)), hr = mk("div", "sf-heart", pinkHeart(u * 0.8));
+    hl.style.cssText = "left:" + P * 0.07 + "px;top:" + PH * 0.05 + "px"; hr.style.cssText = "left:" + (P * 0.93 - hw) + "px;top:" + PH * 0.1 + "px";
+    var catW = mk("div", "sf-cat"), bob = mk("div", "mc-bob"), box = catBox(u, catCfg("a"), "open");
+    bob.appendChild(box); catW.appendChild(bob);
+    catW.style.cssText = "left:" + (P - 14 * u) / 2 + "px;top:" + (gy - 12 * u) + "px;transform:translateX(" + (-P) + "px)";
+    photo.appendChild(hl); photo.appendChild(hr); photo.appendChild(catW);
+    var btns = mk("div", "sf-btns", '<button type="button" class="sf-b save">保存图片</button><button type="button" class="sf-b go">继续 ▶</button>'); btns.style.visibility = "hidden";
+    var tip = mk("p", "sf-tip", "手机上也可以长按照片保存"); tip.style.visibility = "hidden";
+    ov.appendChild(frame); ov.appendChild(btns); ov.appendChild(tip);
+    function after(ms, fn) { tms.push(setTimeout(function () { if (!ended) fn(); }, ms)); }
+    function finish() {
+      if (finished) return; finished = true; ended = true; tms.forEach(clearTimeout); partyClose(ov, done);
+    }
+    partyAbort = function () { if (finished) return; finished = true; ended = true; tms.forEach(clearTimeout); partyAbort = null; ov.remove(); if (res) res.el.style.visibility = ""; };
+    skip.addEventListener("click", function (e) { e.stopPropagation(); finish(); });
+    btns.querySelector(".go").addEventListener("click", finish);
+    btns.querySelector(".save").addEventListener("click", function () {
+      if (!shotCv) return;
+      shotCv.toBlob(function (b) {
+        if (!b) { showToast("保存失败了，试试长按照片", false); return; }
+        var f = null; try { f = new File([b], "kitty-photo.png", { type: "image/png" }); } catch (e) {}
+        var touch = window.matchMedia && matchMedia("(pointer: coarse)").matches;
+        if (touch && f && navigator.canShare && navigator.share && navigator.canShare({ files: [f] })) { navigator.share({ files: [f], title: "你们的小猫合影" }).catch(function () {}); return; }
+        var a = document.createElement("a"), link = URL.createObjectURL(b); a.href = link; a.download = "kitty-photo.png"; document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function () { URL.revokeObjectURL(link); }, 4000); showToast("已保存图片", false);
+      }, "image/png");
+    });
+    var a0 = frame.animate([{ transform: "translateY(" + -vh + "px) rotate(-9deg)" }, { transform: "translateY(0) rotate(-1.5deg)" }], { duration: 750, easing: "cubic-bezier(.25,1.25,.45,1)", fill: "forwards" });
+    a0.onfinish = function () { if (ended) return; frame.style.transform = "rotate(-1.5deg)"; a0.cancel(); };
+    function tick(n) { count.textContent = n; count.classList.remove("pop"); void count.offsetWidth; count.classList.add("pop"); }
+    after(800, function () {
+      sfxMeow("ask");
+      var a = catW.animate([{ transform: "translateX(" + (-P) + "px)" }, { transform: "translateX(0)" }], { duration: 750, easing: "ease-out", fill: "forwards" });
+      a.onfinish = function () { if (ended) return; catW.style.transform = ""; a.cancel(); bob.className = ""; };
+    });
+    after(1750, function () { hint.textContent = "看这边～笑一个"; tick(3); });
+    after(2450, function () { tick(2); });
+    after(3150, function () { tick(1); box.setMood("wide"); });
+    after(3850, function () {
+      count.textContent = ""; skip.style.display = "none"; sfxShutter(); sfxMeow("happy"); box.setMood("happy"); hint.textContent = "咔嚓！";
+      var fl = mk("div", "sf-flash"); ov.appendChild(fl); setTimeout(function () { fl.remove(); }, 600);
+      var t0 = Date.now();
+      polaroidCanvas().then(function (cv) {
+        if (ended) return; shotCv = cv; var url = cv.toDataURL("image/png");
+        after(Math.max(500, 1100 - (Date.now() - t0)), function () {
+          frame.style.height = frame.offsetHeight + "px"; frame.classList.add("done"); frame.innerHTML = "";
+          var img = new Image(); img.alt = "你们的小猫合影"; img.className = "sf-img"; img.src = url; frame.appendChild(img);
+          hint.textContent = "拍好啦：你们的小猫合影 💗"; btns.style.visibility = ""; tip.style.visibility = "";
+        });
+      }).catch(function () { hint.textContent = "照片没洗出来……"; after(1200, finish); });
+    });
+  }
+
+  /* ---- 爱心蛋糕：小猫把蛋糕推下桌，蜡烛亮起，吹一口气（麦克风）或点一下才放烟花 ---- */
+  function cakeSvg(px) {
+    var R = [], L = "var(--pet-line)", oy = 3;
+    function r(x, y, w, h, f) { R.push('<rect x="' + x + '" y="' + y + '" width="' + w + '" height="' + h + '" fill="' + f + '"/>'); }
+    r(2, oy + 3, 11, 5, L); r(0, oy + 7, 15, 5, L);
+    r(3, oy + 4, 9, 4, "#f6d8a8"); r(1, oy + 8, 13, 3, "#ffb3c7");
+    r(3, oy + 4, 9, 1, "#fffaf4"); [4, 7, 10].forEach(function (x) { r(x, oy + 5, 1, 1, "#fffaf4"); });
+    r(1, oy + 8, 13, 1, "#fffaf4"); [2, 5, 9, 12].forEach(function (x) { r(x, oy + 9, 1, 1, "#fffaf4"); });
+    r(3, oy + 10, 1, 1, "#ffd36b"); r(7, oy + 10, 1, 1, "#ffffff"); r(11, oy + 10, 1, 1, "#9be7ff"); r(9, oy + 10, 1, 1, "#e5484d");
+    r(0, oy + 11, 15, 1, "#e6e0ee"); r(1, oy + 12, 13, 1, "#b9b2c6");
+    [[5, "#7ec8ff"], [7, "#ffd36b"], [9, "#ff9fc0"]].forEach(function (c) { r(c[0], oy, 1, 3, c[1]); r(c[0], oy, 1, 1, L); });
+    return '<svg width="' + 15 * px + '" height="' + 16 * px + '" viewBox="0 0 15 16" aria-hidden="true">' + R.join("") + "</svg>";
+  }
+  /* 听“吹气”：音量持续超过环境音一阵就算吹了；没有麦克风 / 没授权就走 onFail，改成点一下 */
+  function listenBlow(cb) {
+    var stopped = false, stream = null, raf = 0;
+    function stop() { if (stopped) return; stopped = true; cancelAnimationFrame(raf); try { stream && stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {} micClose(); }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || !(window.AudioContext || window.webkitAudioContext)) { setTimeout(function () { if (!stopped) cb.fail(); }, 0); return stop; }
+    navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }).then(function (s) {
+      if (stopped) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+      stream = s; micUnlock(); if (!micCtx) { stop(); cb.fail(); return; } if (micCtx.resume) micCtx.resume();
+      var src = micCtx.createMediaStreamSource(s), an = micCtx.createAnalyser(); an.fftSize = 1024; src.connect(an);
+      var buf = new Uint8Array(an.fftSize), t0 = performance.now(), last = t0, floor = -1, above = 0; cb.ready();
+      (function loop(now) {
+        if (stopped) return; raf = requestAnimationFrame(loop);
+        an.getByteTimeDomainData(buf); var sum = 0; for (var i = 0; i < buf.length; i++) { var v = (buf[i] - 128) / 128; sum += v * v; }
+        var rms = Math.sqrt(sum / buf.length), dt = now - last; last = now;
+        if (floor < 0 || rms < floor) floor = rms; else floor += (rms - floor) * 0.002; /* 环境底噪：往下立刻跟，往上慢慢跟，说话 / 吹气不会把它抬高 */
+        if (now - t0 < 400) return;
+        var b = floor, thr = Math.max(0.07, b * 3.2);
+        cb.level(Math.max(0, Math.min(1, (rms - b) / (thr - b + 1e-4))));
+        above = rms > thr ? above + dt : Math.max(0, above - dt * 2);
+        if (above >= 250) { stop(); cb.blow(); }
+      })(performance.now());
+    }, function () { if (!stopped) { stop(); cb.fail(); } });
+    return stop;
+  }
+  function cakeGame(done) {
+    var vw = window.innerWidth, vh = window.innerHeight, ended = false, finished = false, blown = false, lit = false, tms = [], stopMic = null;
+    var u = Math.max(5, Math.min(8, Math.round(vw / 60))), cu = Math.max(5, Math.min(9, Math.round(vw / 48)));
+    var catWd = 14 * u, catH = 12 * u, cakeW = 15 * cu, cakeH = 16 * cu;
+    var plankY = Math.round(vh * 0.32), edgeX = Math.round(vw * 0.72), groundY = Math.round(vh * 0.8);
+    var left0 = edgeX - cakeW - cu * 3, left1 = edgeX - cu * 7, dx1 = left1 - left0, catX0 = Math.max(4, left0 - catWd + u * 2);
+    var fx = dx1 + cu * 2 + 3, fLeft = left0 + fx, dy = groundY - plankY, catGX = Math.max(4, fLeft - catWd - u);
+    var ov = partyShell("cake", "桌子上有一个蛋糕……");
+    var hint = ov.querySelector(".wg-hint"), skip = ov.querySelector(".wg-skip");
+    var plank = mk("div", "ck-plank"); plank.style.cssText = "top:" + plankY + "px;width:" + edgeX + "px";
+    var shadow = mk("div", "ck-shadow"); shadow.style.cssText = "left:" + (fLeft - cu) + "px;top:" + (groundY - 5) + "px;width:" + (cakeW + 2 * cu) + "px";
+    var cake = mk("div", "ck-cake"); cake.style.cssText = "left:" + left0 + "px;top:" + (plankY - cakeH) + "px;width:" + cakeW + "px;height:" + cakeH + "px;transform-origin:" + cu * 7 + "px 100%";
+    var inner = mk("div", "ck-in", cakeSvg(cu)), flames = [];
+    [5.5, 7.5, 9.5].forEach(function (cx) {
+      var f = mk("div", "ck-flame", "<i></i>"); f.style.cssText = "left:" + (cx - 0.65) * cu + "px;top:" + 0.7 * cu + "px;width:" + 1.3 * cu + "px;height:" + 2.2 * cu + "px"; inner.appendChild(f); flames.push(f);
+    });
+    cake.appendChild(inner);
+    var cat = mk("div", "ck-cat"), flip = mk("div", "mc-bob"), cb = catBox(u, catCfg("a"), "open"), bub = mk("div", "cbub");
+    flip.appendChild(cb); cat.appendChild(flip); cat.appendChild(bub);
+    cat.style.cssText = "left:0;top:" + (plankY - catH) + "px;transform:translateX(" + (-catWd - 24) + "px)";
+    ov.appendChild(plank); ov.appendChild(shadow); ov.appendChild(cake); ov.appendChild(cat);
+    function after(ms, fn) { tms.push(setTimeout(function () { if (!ended) fn(); }, ms)); }
+    function tr(x, y, r) { return "translate(" + x + "px," + y + "px)" + (r ? " rotate(" + r + "deg)" : ""); }
+    function go(elm, frames, opt, next) {
+      var a = elm.animate(frames, opt);
+      a.onfinish = function () { if (ended) return; elm.style.transform = frames[frames.length - 1].transform; a.cancel(); if (next) next(); };
+    }
+    function say(t, ms) { bub.textContent = t; bub.classList.add("show"); setTimeout(function () { bub.classList.remove("show"); }, ms || 900); }
+    function finish() {
+      if (finished) return; finished = true; ended = true; tms.forEach(clearTimeout); if (stopMic) stopMic(); micClose(); partyClose(ov, done);
+    }
+    partyAbort = function () { if (finished) return; finished = true; ended = true; tms.forEach(clearTimeout); if (stopMic) stopMic(); micClose(); partyAbort = null; ov.remove(); if (res) res.el.style.visibility = ""; };
+    skip.addEventListener("click", function (e) { e.stopPropagation(); finish(); });
+
+    function smoke(f) {
+      var s = mk("div", "ck-smoke"); s.style.cssText = "left:" + (parseFloat(f.style.left) + 0.2 * cu) + "px;top:" + 0.3 * cu + "px;width:" + cu + "px;height:" + cu + "px"; inner.appendChild(s);
+      s.animate([{ transform: "translateY(0) scale(.6)", opacity: 0.8 }, { transform: "translateY(" + -3.5 * cu + "px) scale(1.8)", opacity: 0 }], { duration: 1100, easing: "ease-out" }).onfinish = function () { s.remove(); };
+    }
+    function blowOut() {
+      if (blown || ended) return; blown = true; if (stopMic) stopMic(); micClose();
+      hint.textContent = "呼——"; sfxPuff(); cb.setMood("happy"); sfxMeow("happy"); say("喵～💗", 1600);
+      flames.forEach(function (f, i) { after(i * 140, function () { f.style.transform = ""; f.classList.remove("on"); smoke(f); }); });
+      after(900, function () { hint.textContent = "愿望一定会实现 ✨"; sfxDing(4); sfxDing(2); });
+      after(2000, finish);
+    }
+    function askBlow() {
+      lit = true; skip.textContent = "直接放烟花";
+      hint.textContent = "闭上眼睛许个愿，然后点一下屏幕，或对着手机吹一口气";
+      ov.classList.add("ask"); ov.addEventListener("click", function (e) { if (e.target !== skip) blowOut(); });
+      after(1600, function () {
+        if (blown) return; hint.textContent = "吹气需要开麦克风；不想开就直接点一下屏幕";
+        stopMic = listenBlow({
+          ready: function () { if (!blown) hint.textContent = "对着手机吹一口气 💨（也可以点一下屏幕）"; },
+          level: function (l) { flames.forEach(function (f, i) { f.style.transform = "skewX(" + (-l * (16 + i * 3)) + "deg) scaleY(" + (1 - l * 0.3) + ")"; }); },
+          blow: blowOut,
+          fail: function () { if (!blown) hint.textContent = "点一下屏幕，把蜡烛吹灭 🕯️"; }
+        });
+      });
+    }
+    function lightUp() {
+      ov.classList.add("lit"); hint.textContent = "蜡烛亮起来了 🕯️"; cb.setMood("up", "#ffd36b");
+      flames.forEach(function (f, i) { after(i * 380, function () { f.classList.add("on"); if (soundOn && AC) tone(880 + i * 220, AC.currentTime, 0.1, 0.05, "triangle"); }); });
+      after(1500, askBlow);
+    }
+    function impact() {
+      sfxThud(3, 1); shadow.classList.add("on");
+      ov.animate([{ transform: "translateY(0)" }, { transform: "translateY(7px)" }, { transform: "translateY(-5px)" }, { transform: "translateY(2px)" }, { transform: "translateY(0)" }], { duration: 320 });
+      inner.animate([{ transform: "scale(1.28,.76)" }, { transform: "scale(.93,1.08)" }, { transform: "scale(1,1)" }], { duration: 400 });
+      for (var i = 0; i < 7; i++) (function (i) {
+        var d = mk("div", "ck-dust"), s = cu * (0.6 + Math.random() * 0.8), dir = i % 2 ? 1 : -1;
+        d.style.cssText = "left:" + (fLeft + cakeW / 2 + dir * cakeW * 0.3) + "px;top:" + (groundY - s) + "px;width:" + s + "px;height:" + s + "px"; ov.appendChild(d);
+        d.animate([{ transform: "translate(0,0) scale(.6)", opacity: 0.7 }, { transform: "translate(" + dir * (cakeW * 0.4 + Math.random() * cakeW * 0.4) + "px," + -cu * (1 + Math.random() * 2) + "px) scale(1.6)", opacity: 0 }], { duration: 700 + Math.random() * 300, easing: "ease-out" }).onfinish = function () { d.remove(); };
+      })(i);
+    }
+    function jumpDown() {
+      cb.setMood("open"); sfxMeow("short"); var xf = catX0 + dx1;
+      go(cat, [{ transform: tr(xf, 0), easing: "ease-out" }, { transform: tr((xf + catGX) / 2, -u * 5), offset: 0.4, easing: "ease-in" }, { transform: tr(catGX, dy) }], { duration: 650 }, function () { sfxThud(1, 0.6); after(300, lightUp); });
+    }
+    function fall() {
+      var T = dx1 + 4, H = Math.round(cakeH * 0.22);
+      hint.textContent = "啊，掉下去了！"; cb.setMood("wide");
+      go(cake, [
+        { transform: tr(T, 0, 24), easing: "cubic-bezier(.5,0,.9,.55)" },
+        { transform: tr(fx, dy, -6), offset: 0.7, easing: "ease-out" },
+        { transform: tr(fx, dy - H, 3), offset: 0.82, easing: "ease-in" },
+        { transform: tr(fx, dy, 0), offset: 0.92, easing: "ease-out" },
+        { transform: tr(fx, dy - Math.round(H * 0.3), 0), offset: 0.96, easing: "ease-in" },
+        { transform: tr(fx, dy, 0) }
+      ], { duration: 1300 }, function () { say("咦？", 700); after(500, jumpDown); });
+      after(910, impact);
+    }
+    function push() {
+      hint.textContent = "小猫伸出了爪子……"; cb.setMood("wide"); say("嘿咻…", 900); sfxMeow("short", 2); flip.className = "mc-bob";
+      after(550, function () {
+        go(cat, [{ transform: tr(catX0, 0) }, { transform: tr(catX0 + dx1, 0) }], { duration: 900, easing: "ease-in-out" });
+        go(cake, [{ transform: tr(0, 0) }, { transform: tr(dx1, 0) }], { duration: 900, easing: "ease-in-out" }, function () {
+          flip.className = ""; go(cake, [{ transform: tr(dx1, 0, 0) }, { transform: tr(dx1 + 4, 0, 24) }], { duration: 300, easing: "ease-in" }, fall);
+        });
+      });
+    }
+    after(500, function () {
+      go(cat, [{ transform: tr(-catWd - 24, 0) }, { transform: tr(catX0, 0) }], { duration: 1000, easing: "ease-out" }, function () { flip.className = ""; cb.setMood("open"); say("喵？", 700); after(900, push); });
+    });
+  }
+
+  /* 点「愿意」之后：先合影，再推蛋糕；都结束了才放烟花 */
+  function partyRun(done) {
+    var steps = [];
+    if (catOn() && state.selfie) steps.push(selfieGame);
+    if (catOn() && state.cake) { steps.push(cakeGame); micUnlock(); }
+    if (!steps.length) { done(); return; }
+    var tok = runTok;
+    setTimeout(function () { (function next(k) { if (tok !== runTok) return; if (k >= steps.length) { done(); return; } steps[k](function () { next(k + 1); }); })(0); }, 700);
+  }
+
   /* ---- 压轴烟花：窗口炸成烟花，再聚成那句话和一颗心 ---- */
   var fwOn = false;
   function sfxBoom() {
@@ -1234,11 +1526,15 @@
       yes.type = no.type = "button"; yes.className = "yes"; no.className = "no";
       yes.textContent = "愿意 💗"; no.textContent = "再想想";
       acts.appendChild(yes); acts.appendChild(no); body.appendChild(acts);
+      var accepted = false;
       function accept() {
+        if (accepted) return; accepted = true;
         body.textContent = "我就知道你会答应 💗"; catMood("happy"); knockHalt();
-        if (state.fireworks && !reduce) { fireworks(text, catSign); return; }
-        var r = el.getBoundingClientRect(); fxBurst(r.left + r.width / 2, r.top + r.height / 2);
-        sfxFanfare(); beat(); setTimeout(catSign, 1800);
+        partyRun(function () { /* 合影、蛋糕都结束了，才放烟花 */
+          if (state.fireworks && !reduce) { fireworks(text, catSign); return; }
+          var r = el.getBoundingClientRect(); fxBurst(r.left + r.width / 2, r.top + r.height / 2);
+          sfxFanfare(); beat(); setTimeout(catSign, 1800);
+        });
       }
       function dodge(e) {
         if (giveUp) return;
@@ -1500,6 +1796,7 @@
 
   var runTok = 0;
   function run() {
+    if (partyAbort) partyAbort();
     syncBgm();
     var tok = ++runTok;
     stopVoices();
@@ -1830,7 +2127,7 @@
     fLayout.value = state.layout; fTo.value = state.to; fFrom.value = state.from; fEnv.checked = state.envelope; fFin.checked = state.finale; fFx.checked = state.fx; fGap.value = state.gap; fPets.checked = state.pets; gapVal.textContent = (state.gap / 1000).toFixed(2);
     draftSkin = state.skin; renderSkinChips();
     draftMedia = clone(state.media); fAutoVoice.checked = state.autoVoice; renderMediaList(); recLabel();
-    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; fCats.checked = state.cats; fFw.checked = state.fireworks; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm();
+    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; fCats.checked = state.cats; fFw.checked = state.fireworks; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm();
     modeNote.textContent = "这里的修改保存在你自己的浏览器里；点「分享」会把当前内容存到云端，生成发给 TA 的链接。";
   }
   function closeAll() {
@@ -1862,7 +2159,7 @@
       layout: fLayout.value, to: fTo.value.trim(), from: fFrom.value.trim(), envelope: fEnv.checked, finale: fFin.checked, fx: fFx.checked,
       msgs: lines.length ? lines : DEFAULTS.msgs.slice(),
       media: normMedia(draftMedia.filter(function (m) { return mediaSrc(m); })), autoVoice: fAutoVoice.checked,
-      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked,
+      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked, selfie: document.getElementById("fSelfie").checked, cake: document.getElementById("fCake").checked,
       bgm: draftBgm && mediaSrc(draftBgm) ? normBgm(draftBgm) : null
     };
     var oldMedia = state.media.concat(state.bgm ? [state.bgm] : []);

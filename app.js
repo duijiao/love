@@ -33,7 +33,7 @@
   function tplOf(id) { return TEMPLATES[id] || TEMPLATES[defSkin()]; }
   function mkDefaults() {
     var id = defSkin(), t = TEMPLATES[id];
-    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, accept: "", cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, fish: true, randGame: false, catVoice: true, knock: true, selfie: true, selfiePhoto: null, cake: true, wish: true, wishStar: true, angler: false, snow: false, yarn: false, paw: false, balloon: false, parcel: false, calendar: false, domino: false, gacha: false, claw: false, mailbox: false, endings: true, entryRand: false, diy: false };
+    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, accept: "", cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, fish: true, randGame: false, catVoice: true, knock: true, selfie: true, selfiePhoto: null, cake: true, wish: true, wishStar: true, angler: false, snow: false, yarn: false, paw: false, balloon: false, parcel: false, calendar: false, domino: false, gacha: false, claw: false, mailbox: false, star: false, mole: false, endings: true, entryRand: false, diy: false };
   }
   var DEFAULTS = mkDefaults();
 
@@ -177,6 +177,8 @@
       gacha: !!o.gacha,
       claw: !!o.claw,
       mailbox: !!o.mailbox,
+      star: !!o.star,
+      mole: !!o.mole,
       endings: o.endings !== false,
       entryRand: !!o.entryRand,
       diy: !!o.diy
@@ -1931,14 +1933,100 @@
     });
   }
 
+  /* 流星的“嗖”：一记快速下滑的高频正弦 */
+  function sfxMeteor(ms) {
+    if (!soundOn || !AC) return;
+    var t = AC.currentTime, d = ms / 1000, o = AC.createOscillator(), g = AC.createGain();
+    o.type = "sine"; o.frequency.setValueAtTime(2800, t); o.frequency.exponentialRampToValueAtTime(380, t + d);
+    g.gain.setValueAtTime(0.0001, t); g.gain.linearRampToValueAtTime(0.05, t + d * 0.25); g.gain.exponentialRampToValueAtTime(0.0001, t + d);
+    o.connect(g); g.connect(master); o.start(t); o.stop(t + d + 0.05);
+  }
+  function starEnter(act, vw, vh) { /* 星星落下：夜空里划过一颗流星，砸在窗口位置，闪一下，窗口从星光里浮现 */
+    pqAdd(act, function (me, done) {
+      var el = act.el, tx = act.cx, ty = act.cy, z0 = el.style.zIndex, side = act.idx % 2 ? 1 : -1, i;
+      var sx = Math.max(-60, Math.min(vw + 60, tx + side * (90 + Math.min(vw * 0.5, ty * 0.9 + 60)))), sy = -50;
+      var dx = tx - sx, dy = ty - sy, dist = Math.sqrt(dx * dx + dy * dy), ang = Math.atan2(dy, dx) * 180 / Math.PI;
+      var T = Math.round(Math.max(480, Math.min(760, dist * 0.95))), L = 120;
+      var m = mk("div", "mtr", '<div class="mtr-in"><i class="mtail"></i><i class="mhead"></i></div>');
+      m.style.cssText = "left:" + sx + "px;top:" + sy + "px;opacity:0";
+      m.firstChild.style.transform = "rotate(" + ang.toFixed(1) + "deg)";
+      stage.appendChild(m); me.els.push(m);
+      pqTimer(me, function () {
+        m.style.opacity = 1; sfxMeteor(T);
+        try { m.animate([{ transform: "translate(0,0)" }, { transform: "translate(" + dx + "px," + dy + "px)" }], { duration: T, easing: "cubic-bezier(.35,0,.8,.6)", fill: "forwards" }); } catch (e) {}
+        try { m.querySelector(".mhead").animate([{ transform: "rotate(0deg)" }, { transform: "rotate(360deg)" }], { duration: 420, iterations: Infinity }); } catch (e) {}
+      }, L);
+      pqTimer(me, function () { /* 砸中：白闪 + 星屑，窗口从星光里浮现 */
+        rmEl(m);
+        var S = Math.round(Math.max(act.w, act.h) * 1.5 + 40), fl = mk("i", "stflash");
+        fl.style.cssText = "left:" + (tx - S / 2) + "px;top:" + (ty - S / 2) + "px;width:" + S + "px;height:" + S + "px";
+        stage.appendChild(fl); me.els.push(fl);
+        try { var fa = fl.animate([{ transform: "scale(.15)", opacity: 1 }, { transform: "scale(.8)", opacity: 0.95, offset: 0.3 }, { transform: "scale(1.15)", opacity: 0 }], { duration: 600, easing: "ease-out", fill: "forwards" }); fa.onfinish = function () { rmEl(fl); }; } catch (e) { rmEl(fl); }
+        pqReveal(act, z0, [{ opacity: 0, transform: "scale(.3)", filter: "brightness(3) saturate(.4)" }, { opacity: 1, transform: "scale(1.06)", filter: "brightness(1.6)", offset: 0.45 }, { opacity: 1, transform: "none", filter: "none" }], { duration: 640, easing: "ease-out", fill: "backwards" });
+        for (i = 0; i < 9; i++) {
+          var sp = mk("i", "stsp"), sz = 10 + Math.random() * 10, a = (i / 9) * Math.PI * 2 + Math.random() * 0.5, r = Math.max(act.w, act.h) * 0.5 + 24 + Math.random() * 50;
+          sp.style.cssText = "left:" + (tx - sz / 2) + "px;top:" + (ty - sz / 2) + "px;width:" + sz + "px;height:" + sz + "px"; stage.appendChild(sp); me.els.push(sp);
+          try { var sa = sp.animate([{ transform: "translate(0,0) rotate(0deg) scale(1)", opacity: 1 }, { transform: "translate(" + (Math.cos(a) * r).toFixed(0) + "px," + (Math.sin(a) * r).toFixed(0) + "px) rotate(" + (Math.random() * 240 - 120).toFixed(0) + "deg) scale(.2)", opacity: 0 }], { duration: 700 + Math.random() * 300, easing: "ease-out", fill: "forwards" }); sa.onfinish = (function (n) { return function () { rmEl(n); }; })(sp); } catch (e) { rmEl(sp); }
+        }
+        pqBits(me, tx, ty, 14, act.w, ["#fff6c9", "#ffd36a", "#ffffff", "#bfe0ff"]);
+        sfxThud(0.9, 0.7); shakeStage(2);
+        if (soundOn && AC) { var t = AC.currentTime; [1319, 1568, 2093, 2637].forEach(function (f, k) { tone(f, t + k * 0.07, 0.2, 0.06, "triangle"); }); }
+        act.land();
+      }, L + T);
+      pqTimer(me, done, L + T + 800);
+    });
+  }
+
+  function moleEnter(act, vw, vh) { /* 打地鼠：窗口位置先冒出一个小洞，小猫拿锤子“咚”地敲下，窗口从洞里弹出来 */
+    pqAdd(act, function (me, done) {
+      var el = act.el, tx = act.cx, ty = act.cy, z0 = el.style.zIndex, cf = catCfg("a"), u = 4, cw = 14 * u, side = tx > vw / 2 ? -1 : 1;
+      var hw = Math.round(Math.max(84, Math.min(170, act.w * 0.6))), hh = Math.round(hw * 0.3);
+      var hx = tx + side * 36, hy = Math.max(34, ty - 30);
+      var phS = Math.atan2(tx - hx, -(ty - hy)) * 180 / Math.PI, ph0 = side * 30, phW = side * 54;
+      var hole = mk("div", "wmhole", '<i class="wmin"></i>');
+      hole.style.cssText = "left:" + (tx - hw / 2) + "px;top:" + (ty - hh / 2) + "px;width:" + hw + "px;height:" + hh + "px";
+      stage.appendChild(hole); me.els.push(hole);
+      try { hole.animate([{ transform: "scale(.1)", opacity: 0 }, { transform: "scale(1.12)", opacity: 1, offset: 0.6 }, { transform: "none", opacity: 1 }], { duration: 300, easing: "ease-out", fill: "backwards" }); } catch (e) {}
+      if (soundOn && AC) { noiseHit(AC.currentTime, 0.08, 520, 1, 0.12, "lowpass", 2); tone(240, AC.currentTime, 0.08, 0.06, "sine"); }
+      pqBits(me, tx, ty, 6, hw, ["#b8855a", "#8a5d2f", "#6b4a30"]);
+      var grp = mk("div", "wmgrp"), cat = catBox(u, cf, "open"), ham = mk("div", "wmham", '<i class="wmhead"></i><i class="wmrod"></i>');
+      cat.style.position = "absolute"; cat.style.left = (hx + side * 16 - cw / 2) + "px"; cat.style.top = (hy - 12) + "px";
+      ham.style.left = (hx - 13) + "px"; ham.style.top = (hy - 54) + "px"; ham.style.transform = "rotate(" + ph0 + "deg)";
+      grp.appendChild(cat); grp.appendChild(ham); grp.style.opacity = 0; stage.appendChild(grp); me.els.push(grp);
+      function swing(a, b, ms, ease) { ham.style.transform = "rotate(" + b + "deg)"; try { ham.animate([{ transform: "rotate(" + a + "deg)" }, { transform: "rotate(" + b + "deg)" }], { duration: ms, easing: ease || "ease-in-out" }); } catch (e) {} }
+      pqTimer(me, function () { /* 小猫拎着锤子蹦进来 */
+        grp.style.opacity = 1; sfxMeow("ask", [0, 2, 4, 7, 9][act.idx % 5]);
+        try { grp.animate([{ transform: "translateX(" + side * 70 + "px)", opacity: 0 }, { transform: "translateY(-14px)", opacity: 1, offset: 0.6 }, { transform: "none", opacity: 1 }], { duration: 300, easing: "ease-out" }); } catch (e) {}
+      }, 320);
+      pqTimer(me, function () { cat.setMood("wide"); swing(ph0, phW, 240); }, 700); /* 举起锤子，瞄准 */
+      pqTimer(me, function () { swing(phW, phS, 130, "cubic-bezier(.5,0,.9,.6)"); }, 1050);
+      pqTimer(me, function () { /* 咚！窗口从洞里弹出来 */
+        cat.setMood("happy");
+        pqReveal(act, z0, [{ opacity: 0, transform: "scale(.12,.08)" }, { opacity: 1, transform: "translateY(-18px) scale(1.12,1.08)", offset: 0.5 }, { opacity: 1, transform: "translateY(4px) scale(.96,1.03)", offset: 0.78 }, { opacity: 1, transform: "none" }], { duration: 540, easing: "ease-out", fill: "backwards" });
+        try { hole.animate([{ transform: "none" }, { transform: "scale(1.08,.7)" }, { transform: "none" }], { duration: 240 }); } catch (e) {}
+        var bm = mk("i", "wmboom"); bm.textContent = "咚!"; bm.style.left = tx + "px"; bm.style.top = (ty - hh / 2 - 8) + "px"; stage.appendChild(bm); me.els.push(bm);
+        try { var ba = bm.animate([{ transform: "translate(-50%,-50%) scale(.3)", opacity: 0 }, { transform: "translate(-50%,-90%) scale(1.25) rotate(-6deg)", opacity: 1, offset: 0.35 }, { transform: "translate(-50%,-170%) scale(1)", opacity: 0 }], { duration: 720, easing: "ease-out", fill: "forwards" }); ba.onfinish = function () { rmEl(bm); }; } catch (e) { rmEl(bm); }
+        sfxThud(1.1, 0.9); shakeStage(3);
+        pqBits(me, tx, ty, 12, hw + 40, ["#b8855a", "#ffd36a", "#fffaf0", "#8a5d2f"]);
+        sfxMeow("happy", [0, 2, 4, 7, 9][act.idx % 5]); act.land();
+      }, 1180);
+      pqTimer(me, function () { swing(phS, ph0, 260); }, 1450); /* 锤子抬起来 */
+      pqTimer(me, function () { /* 小猫蹦走，洞合上 */
+        try { var ga = grp.animate([{ transform: "none", opacity: 1 }, { transform: "translate(" + side * 90 + "px,-10px)", opacity: 0 }], { duration: 320, easing: "ease-in", fill: "forwards" }); ga.onfinish = function () { rmEl(grp); }; } catch (e) { rmEl(grp); }
+        try { var ha = hole.animate([{ transform: "none", opacity: 1 }, { transform: "scale(.2)", opacity: 0 }], { duration: 300, fill: "forwards" }); ha.onfinish = function () { rmEl(hole); }; } catch (e) { rmEl(hole); }
+      }, 1850);
+      pqTimer(me, done, 2250);
+    });
+  }
+
   /* ---- 小猫打翻东西：小猫跳上桌子，把窗口一个个推下去，窗口带着重量摔在地上 ---- */
   var kn = null;
   /* 出场方式：carry 叼信 / knock 打翻 / angler 钓鱼 / snow 雪球；开了“出场方式随机”就每次播放随机换一种 */
   var entryMode = "carry", lastEntry = "";
   function pickEntry() {
     var m;
-    if (state.entryRand) { var pool = ["carry", "knock", "angler", "snow", "yarn", "paw", "balloon", "parcel", "calendar", "domino", "gacha", "claw", "mailbox"].filter(function (x) { return x !== lastEntry; }); m = pool[Math.floor(Math.random() * pool.length)]; }
-    else m = state.knock ? "knock" : state.angler ? "angler" : state.snow ? "snow" : state.yarn ? "yarn" : state.paw ? "paw" : state.balloon ? "balloon" : state.parcel ? "parcel" : state.calendar ? "calendar" : state.domino ? "domino" : state.gacha ? "gacha" : state.claw ? "claw" : state.mailbox ? "mailbox" : "carry";
+    if (state.entryRand) { var pool = ["carry", "knock", "angler", "snow", "yarn", "paw", "balloon", "parcel", "calendar", "domino", "gacha", "claw", "mailbox", "star", "mole"].filter(function (x) { return x !== lastEntry; }); m = pool[Math.floor(Math.random() * pool.length)]; }
+    else m = state.knock ? "knock" : state.angler ? "angler" : state.snow ? "snow" : state.yarn ? "yarn" : state.paw ? "paw" : state.balloon ? "balloon" : state.parcel ? "parcel" : state.calendar ? "calendar" : state.domino ? "domino" : state.gacha ? "gacha" : state.claw ? "claw" : state.mailbox ? "mailbox" : state.star ? "star" : state.mole ? "mole" : "carry";
     return (lastEntry = m);
   }
   /* 闷响：一记下坠的低频正弦 + 一小撮低通噪声；窗口越大越沉 */
@@ -2283,22 +2371,123 @@
     { t: "小猫替你着急", d: "躲了好几下，{cat} 都看不下去了，推了你一把。" },
     { t: "好吧，愿意", d: "「再想想」都躲到没地方躲了，只好承认。" }
   ];
+  /* ---- 场景勋章：出场方式 / 压轴小游戏 / 小动作，在看到结局时点亮；只存在本机 ---- */
+  var BKEY = "winter-badges-v1";
+  var BGROUPS = [
+    { k: "end", t: "结局", c: "#f2a0b8", h: "在压轴窗口做出不同的选择" },
+    { k: "entry", t: "出场方式", c: "#8fc9f0", h: "换一种出场方式，看到结局时点亮" },
+    { k: "game", t: "压轴小游戏", c: "#ffd36a", h: "压轴前陪小猫玩一次小游戏" },
+    { k: "pick", t: "小动作", c: "#a9dc96", h: "试试不一样的选择" }
+  ];
+  var BADGES = [
+    { id: "n:0", g: "end", ic: "💞", t: "心有灵犀", d: "一次都没点「再想想」。" },
+    { id: "n:1", g: "end", ic: "🤔", t: "想了想，还是你", d: "点了 1~2 次「再想想」。" },
+    { id: "n:2", g: "end", ic: "😼", t: "小猫替你着急", d: "点了 3~5 次「再想想」。" },
+    { id: "n:3", g: "end", ic: "🏳️", t: "好吧，愿意", d: "「再想想」躲到认输才点。" },
+    { id: "e:carry", g: "entry", ic: "✉️", t: "叼信快递", d: "小猫叼着信跑来，放下后窗口弹出。" },
+    { id: "e:knock", g: "entry", ic: "🥛", t: "打翻东西", d: "小猫跳上桌子，把窗口一个个推下去。" },
+    { id: "e:angler", g: "entry", ic: "🎣", t: "钓鱼达人", d: "窗口被小猫从水里一竿吊了起来。" },
+    { id: "e:snow", g: "entry", ic: "⛄", t: "雪球攻击", d: "窗口从雪球砸出的雪渍里弹出来。" },
+    { id: "e:yarn", g: "entry", ic: "🧶", t: "线球拉扯", d: "小猫猛地一拽，窗口从线球下弹出。" },
+    { id: "e:paw", g: "entry", ic: "🐾", t: "猫爪拍窗", d: "巨大的猫爪“啪”地按出一个窗口。" },
+    { id: "e:balloon", g: "entry", ic: "🎈", t: "气球升空", d: "窗口挂着气球飘来，“啵”地落下。" },
+    { id: "e:parcel", g: "entry", ic: "🚚", t: "拆快递", d: "一道“嘶啦”，窗口从泡沫粒里冒出来。" },
+    { id: "e:calendar", g: "entry", ic: "📅", t: "撕日历", d: "旧日期一页页飞走，窗口露了出来。" },
+    { id: "e:domino", g: "entry", ic: "🧱", t: "多米诺", d: "骨牌一块接一块倒下，撞出窗口。" },
+    { id: "e:gacha", g: "entry", ic: "🥚", t: "扭蛋机", d: "转一圈旋钮，窗口从扭蛋里弹出来。" },
+    { id: "e:claw", g: "entry", ic: "🧸", t: "抓娃娃机", d: "爪子抓起娃娃，窗口从出口弹出。" },
+    { id: "e:mailbox", g: "entry", ic: "📮", t: "投信箱", d: "信“叮”地投进去，窗口从投信口弹出。" },
+    { id: "e:star", g: "entry", ic: "🌠", t: "星星落下", d: "流星砸出一道白光，窗口从星光里浮现。" },
+    { id: "e:mole", g: "entry", ic: "🔨", t: "打地鼠", d: "“咚”地一锤，窗口从洞里弹出来。" },
+    { id: "g:wand", g: "game", ic: "🐈", t: "逗猫棒", d: "压轴前陪小猫玩了逗猫棒。" },
+    { id: "g:box", g: "game", ic: "📦", t: "猜纸箱", d: "压轴前玩了一次猜纸箱。" },
+    { id: "g:fish", g: "game", ic: "🐟", t: "晒鱼干", d: "压轴前陪小猫晒了鱼干。" },
+    { id: "p:fast", g: "pick", ic: "⚡", t: "秒答", d: "压轴窗口一出现，4 秒内就点了「愿意」。" },
+    { id: "p:sulk", g: "pick", ic: "😾", t: "惹毛小猫", d: "连点「再想想」，把小猫惹得哼了一声。" },
+    { id: "p:rerun", g: "pick", ic: "🔄", t: "叼回来", d: "打翻东西的出场里连点 3 次「再想想」，小猫把窗口叼了回来。" }
+  ];
+  var runGames = [], runFlags = {}, finAt = 0;
+  function gm(id, fn) { return function (cb) { runGames.push(id); fn(cb); }; }
   function endingsLoad() { try { var a = JSON.parse(localStorage.getItem(ENDKEY) || "[]"); return Array.isArray(a) ? a.filter(function (x) { return x >= 0 && x < ENDINGS.length; }) : []; } catch (e) { return []; } }
-  function endingShow(id) {
+  function badgesLoad() {
+    var m = {}, a = [];
+    try { a = JSON.parse(localStorage.getItem(BKEY) || "[]"); } catch (e) {}
+    if (Array.isArray(a)) a.forEach(function (x) { m[x] = 1; });
+    endingsLoad().forEach(function (k) { m["n:" + k] = 1; });
+    return m;
+  }
+  function badgesSave(m) { try { localStorage.setItem(BKEY, JSON.stringify(Object.keys(m).filter(function (k) { return k.indexOf("n:") !== 0; }))); } catch (e) {} }
+  function badgeCount(m, g) { var n = 0, t = 0; BADGES.forEach(function (b) { if (!g || b.g === g) { t++; if (m[b.id]) n++; } }); return [n, t]; }
+  function gOf(k) { return BGROUPS.filter(function (g) { return g.k === k; })[0]; }
+  /* 勋章墙：按分组排开；点一个看名字和说明。cur = 本次看到的，fresh = 本次新点亮的 */
+  function buildWall(m, cur, fresh) {
+    var wall = mk("div", "bwall"), cap = mk("div", "bcap", "点一枚勋章看看");
+    BGROUPS.forEach(function (g) {
+      var c = badgeCount(m, g.k), sec = mk("div", "bsec"), head = mk("div", "bhead", "<span></span><em></em>");
+      head.firstChild.textContent = g.t; head.lastChild.textContent = c[0] + "/" + c[1] + (c[0] === c[1] ? " 🏆" : "");
+      var grid = mk("div", "bgrid");
+      BADGES.forEach(function (b) {
+        if (b.g !== g.k) return;
+        var on = !!m[b.id], d = mk("button", "bdg" + (on ? " on" : "") + (cur && cur[b.id] ? " cur" : "") + (fresh && fresh[b.id] ? " fresh" : ""), "<i></i>");
+        d.type = "button"; d.style.setProperty("--bc", g.c); d.firstChild.textContent = on ? b.ic : "？";
+        d.setAttribute("aria-label", on ? b.t : "未点亮");
+        d.addEventListener("click", function (e) { e.stopPropagation(); cap.textContent = on ? b.ic + " " + b.t + " — " + b.d : "？ 未点亮 — " + g.h; });
+        grid.appendChild(d);
+      });
+      sec.appendChild(head); sec.appendChild(grid); wall.appendChild(sec);
+    });
+    wall.appendChild(cap);
+    return wall;
+  }
+  /* 本次这一遍能点亮的勋章：出场方式（有小猫演出时）、玩过的压轴小游戏、选择里的小动作 */
+  function earnedNow(tries) {
+    var e = [];
+    if (catOn()) e.push("e:" + entryMode);
+    runGames.forEach(function (g) { if (e.indexOf("g:" + g) < 0) e.push("g:" + g); });
+    if (tries === 0 && finAt && Date.now() - finAt < 4000) e.push("p:fast");
+    if (runFlags.sulk) e.push("p:sulk");
+    if (runFlags.rerun) e.push("p:rerun");
+    return e;
+  }
+  function endingShow(id, earned) {
     if (!state.endings || !ENDINGS[id]) return;
-    var tok = runTok, got = endingsLoad(), isNew = got.indexOf(id) < 0;
+    var tok = runTok, got = endingsLoad(), isNew = got.indexOf(id) < 0, before = badgesLoad();
     if (isNew) { got.push(id); try { localStorage.setItem(ENDKEY, JSON.stringify(got)); } catch (e) {} }
-    var nm = (state.cat && state.cat.name) || "小猫", E = ENDINGS[id];
-    var card = mk("div", "ending", "<small></small><b></b><p></p><div class=\"edots\"></div><em></em>");
+    var all = badgesLoad(), cur = {}, fresh = {};
+    cur["n:" + id] = 1;
+    if (isNew) fresh["n:" + id] = 1;
+    (earned || []).forEach(function (k) { if (!BADGES.some(function (b) { return b.id === k; })) return; cur[k] = 1; if (!all[k]) { fresh[k] = 1; all[k] = 1; } });
+    badgesSave(all);
+    var nm = (state.cat && state.cat.name) || "小猫", E = ENDINGS[id], tot = badgeCount(all), nf = Object.keys(fresh).length;
+    var card = mk("div", "ending", "<button class=\"eclose\" type=\"button\" aria-label=\"关闭\">×</button><small></small><b></b><p></p><div class=\"ecur\"></div><div class=\"ebar\"><u><i></i></u><span></span></div><button class=\"ewallbtn\" type=\"button\">勋章墙 ▾</button><div class=\"ewallbox\" hidden></div><em></em>");
     card.querySelector("small").textContent = "隐藏结局 · " + got.length + "/" + ENDINGS.length + (isNew ? " · 新解锁" : "");
     card.querySelector("b").textContent = E.t;
     card.querySelector("p").textContent = E.d.replace("{cat}", nm);
-    var dots = card.querySelector(".edots");
-    ENDINGS.forEach(function (x, k) { var d = document.createElement("span"); d.className = (got.indexOf(k) >= 0 ? "on" : "") + (k === id ? " cur" : ""); dots.appendChild(d); });
-    card.querySelector("em").textContent = got.length < ENDINGS.length ? "还有别的结局，再玩一次试试" : "四个结局全部集齐 🎉";
-    function bye() { if (!card.parentNode) return; card.classList.add("out"); setTimeout(function () { rmEl(card); }, 520); }
-    card.addEventListener("pointerdown", bye);
-    setTimeout(function () { if (tok !== runTok) return; stage.appendChild(card); setTimeout(function () { if (tok === runTok) bye(); }, 12000); }, 2400);
+    /* 本次出现的勋章：新点亮的带光圈，一枚枚弹出来 */
+    var strip = card.querySelector(".ecur"), keys = Object.keys(cur), delay = 0;
+    keys.sort(function (a, b2) { return (fresh[b2] ? 1 : 0) - (fresh[a] ? 1 : 0); });
+    keys.forEach(function (k) {
+      var b = BADGES.filter(function (x) { return x.id === k; })[0]; if (!b) return;
+      var chip = mk("span", "bchip" + (fresh[k] ? " new" : ""), "<i></i><u></u>"); chip.style.setProperty("--bc", gOf(b.g).c); chip.style.setProperty("--d", (0.35 + delay * 0.28).toFixed(2) + "s");
+      chip.firstChild.textContent = b.ic; chip.lastChild.textContent = b.t; strip.appendChild(chip);
+      if (fresh[k]) { var f = 1318 * Math.pow(1.122, delay * 2); setTimeout(function () { if (tok === runTok && soundOn && AC) { var t = AC.currentTime; tone(f, t, 0.14, 0.05, "triangle"); tone(f * 1.5, t + 0.06, 0.18, 0.04, "triangle"); } }, 2400 + 350 + delay * 280); }
+      delay++;
+    });
+    card.querySelector(".ebar i").style.width = Math.round(tot[0] / tot[1] * 100) + "%";
+    var done = BGROUPS.filter(function (g) { var c = badgeCount(all, g.k), c0 = badgeCount(before, g.k); return c[0] === c[1] && c0[0] < c0[1]; });
+    card.querySelector(".ebar span").textContent = "勋章 " + tot[0] + "/" + tot[1] + (nf ? " · 新点亮 " + nf + " 枚" : "");
+    var em = card.querySelector("em");
+    em.textContent = tot[0] === tot[1] ? "全部勋章集齐 🏆 你们玩遍了" : done.length ? "「" + done[0].t + "」全部集齐 🏆" : got.length < ENDINGS.length ? "还有别的结局，换个出场方式再玩一次试试" : "四个结局都集齐了，去点亮更多场景勋章吧";
+    var tm = 0, wallBox = card.querySelector(".ewallbox"), wbtn = card.querySelector(".ewallbtn");
+    function bye() { if (!card.parentNode) return; clearTimeout(tm); card.classList.add("out"); setTimeout(function () { rmEl(card); }, 520); }
+    wbtn.addEventListener("click", function (e) {
+      e.stopPropagation(); clearTimeout(tm);
+      if (wallBox.hidden) { wallBox.innerHTML = ""; wallBox.appendChild(buildWall(all, cur, fresh)); wallBox.hidden = false; wbtn.textContent = "收起 ▴"; card.classList.add("open"); }
+      else { wallBox.hidden = true; wbtn.textContent = "勋章墙 ▾"; card.classList.remove("open"); tm = setTimeout(bye, 8000); }
+    });
+    card.querySelector(".eclose").addEventListener("click", function (e) { e.stopPropagation(); bye(); });
+    card.addEventListener("pointerdown", function (e) { if (wallBox.hidden && !e.target.closest("button")) bye(); });
+    setTimeout(function () { if (tok !== runTok) return; stage.appendChild(card); tm = setTimeout(bye, 6000 + keys.length * 1500); }, 2400);
   }
 
   /* ---- 拍立得合影 + 爱心蛋糕：点「愿意」之后、烟花之前 ---- */
@@ -2916,7 +3105,7 @@
         if (accepted) return; accepted = true;
         body.textContent = state.accept || "我就知道你会答应 💗"; catMood("happy"); knockHalt();
         var endId = giveUp ? 3 : tries === 0 ? 0 : tries <= 2 ? 1 : 2; /* 隐藏结局：按“再想想”的次数分 */
-        var after = function () { catSign(); endingShow(endId); };
+        var after = function () { catSign(); endingShow(endId, earnedNow(tries)); };
         partyRun(function () { /* 合影、蛋糕都结束了，才放烟花 */
           if (state.fireworks && !reduce) { fireworks(text, after); return; }
           var r = el.getBoundingClientRect(); fxBurst(r.left + r.width / 2, r.top + r.height / 2);
@@ -2927,8 +3116,8 @@
         if (giveUp) return;
         e.preventDefault(); e.stopPropagation();
         tries++;
-        if (tries === 2) catMood("sulk");
-        if (tries === 3) knockRerun();
+        if (tries === 2) { catMood("sulk"); if (res) runFlags.sulk = true; }
+        if (tries === 3) { if (entryMode === "knock" && catOn()) runFlags.rerun = true; knockRerun(); }
         var minX = -no.offsetLeft, maxX = acts.clientWidth - no.offsetLeft - no.offsetWidth;
         no.style.transform = "translate(" + (minX + Math.random() * (maxX - minX)) + "px," + ((Math.random() - 0.5) * no.offsetHeight) + "px)";
         if (tries >= 6) { giveUp = true; no.textContent = "好吧，愿意"; no.style.transform = ""; }
@@ -3186,7 +3375,7 @@
     if (partyAbort) partyAbort();
     fishAbort(); snowAbort(); yarnAbort(); pqAbort();
     syncBgm();
-    var tok = ++runTok;
+    var tok = ++runTok; runGames = []; runFlags = {}; finAt = 0;
     stopVoices();
     stage.classList.remove("beat");
     stage.innerHTML = "";
@@ -3211,12 +3400,12 @@
     puz = null;
     if (state.puzzle && fin) setupPuzzle(seq, n, vw);
     var knockN = fin ? n - 1 : n, catRun = catOn() && knockN > 0, mode = pickEntry(); entryMode = mode;
-    var knockOn = catRun && mode === "knock", fishOn = catRun && mode === "angler", snowOn = catRun && mode === "snow", yarnOn = catRun && mode === "yarn", pawOn = catRun && mode === "paw", balOn = catRun && mode === "balloon", parOn = catRun && mode === "parcel", calOn = catRun && mode === "calendar", domOn = catRun && mode === "domino", gacOn = catRun && mode === "gacha", clwOn = catRun && mode === "claw", mlbOn = catRun && mode === "mailbox";
+    var knockOn = catRun && mode === "knock", fishOn = catRun && mode === "angler", snowOn = catRun && mode === "snow", yarnOn = catRun && mode === "yarn", pawOn = catRun && mode === "paw", balOn = catRun && mode === "balloon", parOn = catRun && mode === "parcel", calOn = catRun && mode === "calendar", domOn = catRun && mode === "domino", gacOn = catRun && mode === "gacha", clwOn = catRun && mode === "claw", mlbOn = catRun && mode === "mailbox", stOn = catRun && mode === "star", moOn = catRun && mode === "mole";
     if (knockOn) knockStart(vw, vh, knockN, myTok);
     if (fishOn) fishStart(vw, vh, knockN, myTok);
     if (snowOn) snowStart(vw, vh, knockN, myTok);
     if (yarnOn) yarnStart(vw, vh, knockN, myTok);
-    if (pawOn || balOn || parOn || calOn || domOn || gacOn || clwOn || mlbOn) pqStart(knockN);
+    if (pawOn || balOn || parOn || calOn || domOn || gacOn || clwOn || mlbOn || stOn || moOn) pqStart(knockN);
     if (state.diy && (parOn || calOn || gacOn || clwOn || mlbOn) && pq) { pq.diy = true; diyBtnShow(true); } /* 「对方自己动手」：只对拆快递 / 撕日历 / 扭蛋机生效 */
     seq.forEach(function (it, i) {
       var isFin = fin && i === n - 1;
@@ -3237,7 +3426,7 @@
         var reveal = function () {
           if (myTok !== runTok) return;
           el.style.visibility = ""; el.style.animation = "";
-          if (isFin) { bring(el); sfxFanfare(); if (!askFin && !puz) setTimeout(catSign, 1500); } else sfxDing(i); /* 压轴出现时再置顶，免得被后落地的窗口盖住 */
+          if (isFin) { finAt = Date.now(); bring(el); sfxFanfare(); if (!askFin && !puz) setTimeout(catSign, 1500); } else sfxDing(i); /* 压轴出现时再置顶，免得被后落地的窗口盖住 */
           if (puz && puz.cover[i] != null) addShard(puz.cover[i], el, vw, vh);
           if (it.m && it.m.kind === "voice" && state.autoVoice && el._autoplay) el._autoplay();
         };
@@ -3251,7 +3440,7 @@
             } });
             return;
           }
-          if ((fishOn || snowOn || yarnOn || pawOn || balOn || parOn || calOn || domOn || gacOn || clwOn || mlbOn) && !isFin) { /* 钓鱼 / 雪球：窗口的入场动画由小猫的场景自己驱动 */
+          if ((fishOn || snowOn || yarnOn || pawOn || balOn || parOn || calOn || domOn || gacOn || clwOn || mlbOn || stOn || moOn) && !isFin) { /* 钓鱼 / 雪球：窗口的入场动画由小猫的场景自己驱动 */
             el.classList.add("entered");
             var act = {
               el: el, cx: el.offsetLeft + el.offsetWidth / 2, cy: el.offsetTop + el.offsetHeight / 2, w: el.offsetWidth, h: el.offsetHeight, idx: i,
@@ -3264,11 +3453,11 @@
               },
               quick: function () { act.show(); act.land(); }
             };
-            if (pawOn) pawEnter(act, vw, vh); else if (balOn) balloonEnter(act, vw, vh); else if (parOn) parcelEnter(act, vw, vh); else if (calOn) calendarEnter(act, vw, vh); else if (domOn) dominoEnter(act, vw, vh); else if (gacOn) gachaEnter(act, vw, vh); else if (clwOn) clawEnter(act, vw, vh); else if (mlbOn) mailEnter(act, vw, vh); else (fishOn ? fishAdd : snowOn ? snowAdd : yarnAdd)(act);
+            if (pawOn) pawEnter(act, vw, vh); else if (balOn) balloonEnter(act, vw, vh); else if (parOn) parcelEnter(act, vw, vh); else if (calOn) calendarEnter(act, vw, vh); else if (domOn) dominoEnter(act, vw, vh); else if (gacOn) gachaEnter(act, vw, vh); else if (clwOn) clawEnter(act, vw, vh); else if (mlbOn) mailEnter(act, vw, vh); else if (stOn) starEnter(act, vw, vh); else if (moOn) moleEnter(act, vw, vh); else (fishOn ? fishAdd : snowOn ? snowAdd : yarnAdd)(act);
             return;
           }
           var go = function () { catDeliver(el.offsetLeft + el.offsetWidth / 2, el.offsetTop + el.offsetHeight / 2, isFin ? "box" : "letter", reveal, i); };
-          var pre = []; if (isFin && state.wand) pre.push(wandGame); if (isFin && state.boxgame) pre.push(boxGame); if (isFin && state.fish) pre.push(fishGame);
+          var pre = []; if (isFin && state.wand) pre.push(gm("wand", wandGame)); if (isFin && state.boxgame) pre.push(gm("box", boxGame)); if (isFin && state.fish) pre.push(gm("fish", fishGame));
           if (pre.length > 1 && state.randGame) pre = [pre[Math.floor(Math.random() * pre.length)]]; /* 随机只玩一个 */
           knockWhenDone(function () {
             if (myTok !== runTok) return;
@@ -3562,7 +3751,7 @@
     fLayout.value = state.layout; fTo.value = state.to; fFrom.value = state.from; fEnv.checked = state.envelope; fFin.checked = state.finale; fFx.checked = state.fx; fGap.value = state.gap; fPets.checked = state.pets; gapVal.textContent = (state.gap / 1000).toFixed(2);
     draftSkin = state.skin; renderSkinChips();
     draftMedia = clone(state.media); fAutoVoice.checked = state.autoVoice; renderMediaList(); recLabel();
-    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fFish").checked = state.fish; document.getElementById("fRand").checked = state.randGame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; document.getElementById("fWish").checked = state.wish; document.getElementById("fWishStar").checked = state.wishStar; document.getElementById("fAngler").checked = state.angler; document.getElementById("fSnow").checked = state.snow; document.getElementById("fYarn").checked = state.yarn; document.getElementById("fPaw").checked = state.paw; document.getElementById("fBalloon").checked = state.balloon; document.getElementById("fParcel").checked = state.parcel; document.getElementById("fCalendar").checked = state.calendar; document.getElementById("fDomino").checked = state.domino; document.getElementById("fGacha").checked = state.gacha; document.getElementById("fClaw").checked = state.claw; document.getElementById("fMailbox").checked = state.mailbox; document.getElementById("fEndings").checked = state.endings; document.getElementById("fEntryRand").checked = state.entryRand; document.getElementById("fDiy").checked = state.diy; syncEntryUi(); fCats.checked = state.cats; fFw.checked = state.fireworks; fAccept.value = state.accept || ""; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm(); draftSelfie = state.selfiePhoto ? clone(state.selfiePhoto) : null; renderSelfie();
+    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fFish").checked = state.fish; document.getElementById("fRand").checked = state.randGame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; document.getElementById("fWish").checked = state.wish; document.getElementById("fWishStar").checked = state.wishStar; document.getElementById("fAngler").checked = state.angler; document.getElementById("fSnow").checked = state.snow; document.getElementById("fYarn").checked = state.yarn; document.getElementById("fPaw").checked = state.paw; document.getElementById("fBalloon").checked = state.balloon; document.getElementById("fParcel").checked = state.parcel; document.getElementById("fCalendar").checked = state.calendar; document.getElementById("fDomino").checked = state.domino; document.getElementById("fGacha").checked = state.gacha; document.getElementById("fClaw").checked = state.claw; document.getElementById("fMailbox").checked = state.mailbox; document.getElementById("fStar").checked = state.star; document.getElementById("fMole").checked = state.mole; document.getElementById("fEndings").checked = state.endings; document.getElementById("fEntryRand").checked = state.entryRand; document.getElementById("fDiy").checked = state.diy; syncEntryUi(); fCats.checked = state.cats; fFw.checked = state.fireworks; fAccept.value = state.accept || ""; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm(); draftSelfie = state.selfiePhoto ? clone(state.selfiePhoto) : null; renderSelfie();
     modeNote.textContent = "这里的修改保存在你自己的浏览器里；点「分享」会把当前内容存到云端，生成发给 TA 的链接。";
   }
   function closeAll() {
@@ -3571,7 +3760,17 @@
     if (wasEdit) { applySkin(state.skin); discardDraftMedia(); }
   }
   function openEdit() { closeAll(); fill(); sheetEdit.hidden = false; scrim.hidden = false; }
-  function openMore() { closeAll(); renderTemplates(); sheetMore.hidden = false; scrim.hidden = false; }
+  function renderBadgeHost() {
+    var host = document.getElementById("badgeHost"); if (!host) return; host.innerHTML = "";
+    var m = badgesLoad(), c = badgeCount(m); document.getElementById("badgeSum").textContent = "已点亮 " + c[0] + "/" + c[1];
+    host.appendChild(buildWall(m, null, null));
+  }
+  document.getElementById("btnBadgeReset").addEventListener("click", function () {
+    if (!confirm("清空这台设备上的结局和勋章记录？")) return;
+    try { localStorage.removeItem(BKEY); localStorage.removeItem(ENDKEY); } catch (e) {}
+    renderBadgeHost();
+  });
+  function openMore() { closeAll(); renderTemplates(); renderBadgeHost(); sheetMore.hidden = false; scrim.hidden = false; }
 
   fGap.addEventListener("input", function () { gapVal.textContent = (fGap.value / 1000).toFixed(2); });
   document.getElementById("btnEdit").addEventListener("click", openEdit);
@@ -3595,7 +3794,7 @@
       layout: fLayout.value, to: fTo.value.trim(), from: fFrom.value.trim(), envelope: fEnv.checked, finale: fFin.checked, fx: fFx.checked,
       msgs: lines.length ? lines : DEFAULTS.msgs.slice(),
       media: normMedia(draftMedia.filter(function (m) { return mediaSrc(m); })), autoVoice: fAutoVoice.checked,
-      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, accept: fAccept.value.trim().slice(0, 200), cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, fish: document.getElementById("fFish").checked, randGame: document.getElementById("fRand").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked, selfie: document.getElementById("fSelfie").checked, cake: document.getElementById("fCake").checked, wish: document.getElementById("fWish").checked, wishStar: document.getElementById("fWishStar").checked, angler: document.getElementById("fAngler").checked, snow: document.getElementById("fSnow").checked, yarn: document.getElementById("fYarn").checked, paw: document.getElementById("fPaw").checked, balloon: document.getElementById("fBalloon").checked, parcel: document.getElementById("fParcel").checked, calendar: document.getElementById("fCalendar").checked, domino: document.getElementById("fDomino").checked, gacha: document.getElementById("fGacha").checked, claw: document.getElementById("fClaw").checked, mailbox: document.getElementById("fMailbox").checked, endings: document.getElementById("fEndings").checked, entryRand: document.getElementById("fEntryRand").checked, diy: document.getElementById("fDiy").checked,
+      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, accept: fAccept.value.trim().slice(0, 200), cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, fish: document.getElementById("fFish").checked, randGame: document.getElementById("fRand").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked, selfie: document.getElementById("fSelfie").checked, cake: document.getElementById("fCake").checked, wish: document.getElementById("fWish").checked, wishStar: document.getElementById("fWishStar").checked, angler: document.getElementById("fAngler").checked, snow: document.getElementById("fSnow").checked, yarn: document.getElementById("fYarn").checked, paw: document.getElementById("fPaw").checked, balloon: document.getElementById("fBalloon").checked, parcel: document.getElementById("fParcel").checked, calendar: document.getElementById("fCalendar").checked, domino: document.getElementById("fDomino").checked, gacha: document.getElementById("fGacha").checked, claw: document.getElementById("fClaw").checked, mailbox: document.getElementById("fMailbox").checked, star: document.getElementById("fStar").checked, mole: document.getElementById("fMole").checked, endings: document.getElementById("fEndings").checked, entryRand: document.getElementById("fEntryRand").checked, diy: document.getElementById("fDiy").checked,
       selfiePhoto: draftSelfie && mediaSrc(draftSelfie) ? normPhoto(draftSelfie) : null,
       bgm: draftBgm && mediaSrc(draftBgm) ? normBgm(draftBgm) : null
     };
@@ -3623,7 +3822,7 @@
   function useTemplate(id) {
     var t = TEMPLATES[id];
     undoState = clone(state);
-    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, accept: state.accept, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, fish: state.fish, randGame: state.randGame, catVoice: state.catVoice, knock: state.knock, selfie: state.selfie, cake: state.cake, wish: state.wish, wishStar: state.wishStar, angler: state.angler, snow: state.snow, yarn: state.yarn, paw: state.paw, balloon: state.balloon, parcel: state.parcel, calendar: state.calendar, domino: state.domino, gacha: state.gacha, claw: state.claw, mailbox: state.mailbox, endings: state.endings, entryRand: state.entryRand, diy: state.diy, selfiePhoto: state.selfiePhoto ? clone(state.selfiePhoto) : null, bgm: state.bgm ? clone(state.bgm) : null };
+    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, accept: state.accept, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, fish: state.fish, randGame: state.randGame, catVoice: state.catVoice, knock: state.knock, selfie: state.selfie, cake: state.cake, wish: state.wish, wishStar: state.wishStar, angler: state.angler, snow: state.snow, yarn: state.yarn, paw: state.paw, balloon: state.balloon, parcel: state.parcel, calendar: state.calendar, domino: state.domino, gacha: state.gacha, claw: state.claw, mailbox: state.mailbox, star: state.star, mole: state.mole, endings: state.endings, entryRand: state.entryRand, diy: state.diy, selfiePhoto: state.selfiePhoto ? clone(state.selfiePhoto) : null, bgm: state.bgm ? clone(state.bgm) : null };
     closeAll();
     persist(next).then(function () { play(); showToast("已套用「" + t.name + "」", true); });
   }
@@ -3803,7 +4002,7 @@
     }).catch(function () {});
   }
   /* 三种“小猫演出来的出场方式”三选一；开了“出场方式随机”时，这三项不再起作用 */
-  var ENTRY_IDS = ["fKnock", "fAngler", "fSnow", "fYarn", "fPaw", "fBalloon", "fParcel", "fCalendar", "fDomino", "fGacha", "fClaw", "fMailbox"];
+  var ENTRY_IDS = ["fKnock", "fAngler", "fSnow", "fYarn", "fPaw", "fBalloon", "fParcel", "fCalendar", "fDomino", "fGacha", "fClaw", "fMailbox", "fStar", "fMole"];
   function syncEntryUi() {
     var rnd = document.getElementById("fEntryRand").checked;
     ENTRY_IDS.forEach(function (id) { var c = document.getElementById(id); c.disabled = rnd; c.parentNode.style.opacity = rnd ? 0.45 : ""; });

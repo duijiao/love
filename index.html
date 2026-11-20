@@ -103,7 +103,9 @@
     <label class="check"><input id="fGacha" type="checkbox"> 扭蛋机：一台扭蛋机滑进来，小猫拧旋钮，掉出一颗扭蛋，摇两下“啪”地打开，窗口从蛋里弹出来，机器滑走（和上面几种出场方式多选一，开了会替代“叼信送来”）</label>
     <label class="check"><input id="fClaw" type="checkbox"> 抓娃娃机：一台娃娃机滑进来，爪子抓起娃娃送到出口，窗口从出口弹出来（和上面几种出场方式多选一，开了会替代“叼信送来”）</label>
     <label class="check"><input id="fMailbox" type="checkbox"> 投信箱：信箱落到窗口位置，一封信飞进投信口，旗子竖起，窗口从投信口弹出来（和上面几种出场方式多选一，开了会替代“叼信送来”）</label>
-    <label class="check"><input id="fEntryRand" type="checkbox"> 出场方式随机：每次播放，从「叼信 / 打翻东西 / 钓鱼 / 雪球 / 线球 / 猫爪 / 气球 / 拆快递 / 撕日历 / 多米诺 / 扭蛋机 / 抓娃娃机 / 投信箱」里随机换一种出场方式（上面几项的勾选会被忽略；需开着小猫）</label>
+    <label class="check"><input id="fStar" type="checkbox"> 星星落下：夜空里划过一颗流星，砸在窗口位置，闪一下，窗口从星光里浮现（和上面几种出场方式多选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fMole" type="checkbox"> 打地鼠：窗口位置先冒出一个小洞，小猫拿锤子“咚”地敲下，窗口从洞里弹出来（和上面几种出场方式多选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fEntryRand" type="checkbox"> 出场方式随机：每次播放，从「叼信 / 打翻东西 / 钓鱼 / 雪球 / 线球 / 猫爪 / 气球 / 拆快递 / 撕日历 / 多米诺 / 扭蛋机 / 抓娃娃机 / 投信箱 / 星星落下 / 打地鼠」里随机换一种出场方式（上面几项的勾选会被忽略；需开着小猫）</label>
     <label class="check"><input id="fDiy" type="checkbox"> 对方自己动手：拆快递要在盒子上划开胶带，撕日历要一页页点着撕，扭蛋机要点一下转旋钮、再点一下开蛋，抓娃娃机要看准时机点一下放下爪子，投信箱要把信拖进信箱；每个道具上方浮一句提示，几秒没动静会自动替 TA 做，屏幕下方还有「全部帮我弄好」按钮（只对这五种出场方式生效，「出场方式随机」抽到它们时也一样；需开着小猫）</label>
     <label class="check"><input id="fWand" type="checkbox"> 逗猫棒小游戏：压轴前手指变逗猫棒，逗到小猫 4 次才送来礼物盒（可跳过）</label>
     <label class="check"><input id="fBox" type="checkbox"> 猜纸箱小游戏：小猫藏进三个会换位的纸箱之一，猜对了才送来礼物盒（可跳过）</label>
@@ -152,6 +154,10 @@
     <h2>主题模板</h2>
     <p class="small">点一个模板，会换上它的配色和整套文字（原来的文字会被替换，选完可以点「撤销」）。</p>
     <div class="tgrid" id="tgrid"></div>
+    <h2 class="bh2">场景勋章墙 <small id="badgeSum"></small></h2>
+    <p class="small">在带「愿意 / 再想想」的模板里走到结局时，会按这次的出场方式、玩过的压轴小游戏和你的选择点亮勋章。记录只存在这台设备的浏览器里。</p>
+    <div id="badgeHost"></div>
+    <div class="actions"><button class="btn" id="btnBadgeReset" type="button">清空勋章记录</button></div>
     <div class="actions"><button class="btn" id="btnMoreClose" type="button">关闭</button></div>
   </div>
 </section>

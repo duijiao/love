@@ -24,6 +24,8 @@
   <button class="fab" id="btnReplay" type="button">重播</button>
 </div>
 
+<button class="diyall" id="btnDiyAll" type="button" hidden>全部帮我弄好</button>
+
 <div class="scrim" id="scrim" hidden></div>
 
 <section class="sheet" id="sheetEdit" hidden aria-label="修改弹窗内容">
@@ -95,7 +97,14 @@
     <label class="check"><input id="fYarn" type="checkbox"> 线球拽出来：小猫一爪子拍出线球，线球拖着毛线滚到窗口该在的位置，猛地一拽，窗口从线球下面弹出来（和“打翻东西 / 钓鱼 / 雪球”多选一，开了会替代“叼信送来”）</label>
     <label class="check"><input id="fPaw" type="checkbox"> 猫爪拍窗：一只巨大的猫爪从屏幕外伸进来，“啪”地按在窗口该在的位置，抬起后窗口留在肉垫印上（和上面几种出场方式五选一，开了会替代“叼信送来”）</label>
     <label class="check"><input id="fBalloon" type="checkbox"> 气球带上来：窗口挂在一串气球下面从屏幕下方飘上来，到位后气球“啵”地破掉，窗口轻轻落下（和上面几种出场方式五选一，开了会替代“叼信送来”）</label>
-    <label class="check"><input id="fEntryRand" type="checkbox"> 出场方式随机：每次播放，从「叼信 / 打翻东西 / 钓鱼 / 雪球 / 线球 / 猫爪 / 气球」里随机换一种出场方式（上面几项的勾选会被忽略；需开着小猫）</label>
+    <label class="check"><input id="fParcel" type="checkbox"> 小猫拆快递：快递盒从屏幕外被扔进来，猫爪划开胶带，箱盖弹开，窗口从泡沫粒里冒出来，空箱子翻走（和上面几种出场方式多选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fCalendar" type="checkbox"> 小猫撕日历：一本挂历挂到窗口位置，小猫一爪子一页页拍掉旧日期（日期一天天走到今天），最后一页飞走，窗口从后面弹出来（和上面几种出场方式多选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fDomino" type="checkbox"> 多米诺：一排骨牌立在窗口脚下，小猫一爪子推倒第一块，哗啦啦倒过去，最后一块撞出窗口，窗口从底边弹起来（和上面几种出场方式多选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fGacha" type="checkbox"> 扭蛋机：一台扭蛋机滑进来，小猫拧旋钮，掉出一颗扭蛋，摇两下“啪”地打开，窗口从蛋里弹出来，机器滑走（和上面几种出场方式多选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fClaw" type="checkbox"> 抓娃娃机：一台娃娃机滑进来，爪子抓起娃娃送到出口，窗口从出口弹出来（和上面几种出场方式多选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fMailbox" type="checkbox"> 投信箱：信箱落到窗口位置，一封信飞进投信口，旗子竖起，窗口从投信口弹出来（和上面几种出场方式多选一，开了会替代“叼信送来”）</label>
+    <label class="check"><input id="fEntryRand" type="checkbox"> 出场方式随机：每次播放，从「叼信 / 打翻东西 / 钓鱼 / 雪球 / 线球 / 猫爪 / 气球 / 拆快递 / 撕日历 / 多米诺 / 扭蛋机 / 抓娃娃机 / 投信箱」里随机换一种出场方式（上面几项的勾选会被忽略；需开着小猫）</label>
+    <label class="check"><input id="fDiy" type="checkbox"> 对方自己动手：拆快递要在盒子上划开胶带，撕日历要一页页点着撕，扭蛋机要点一下转旋钮、再点一下开蛋，抓娃娃机要看准时机点一下放下爪子，投信箱要把信拖进信箱；每个道具上方浮一句提示，几秒没动静会自动替 TA 做，屏幕下方还有「全部帮我弄好」按钮（只对这五种出场方式生效，「出场方式随机」抽到它们时也一样；需开着小猫）</label>
     <label class="check"><input id="fWand" type="checkbox"> 逗猫棒小游戏：压轴前手指变逗猫棒，逗到小猫 4 次才送来礼物盒（可跳过）</label>
     <label class="check"><input id="fBox" type="checkbox"> 猜纸箱小游戏：小猫藏进三个会换位的纸箱之一，猜对了才送来礼物盒（可跳过）</label>
     <label class="check"><input id="fFish" type="checkbox"> 晒鱼干喂猫：压轴前先把鱼干挂到绳子上晒，再拿晒好的鱼干喂小猫，吃饱了才送来礼物盒（可跳过）</label>
@@ -117,6 +126,7 @@
     <label class="check"><input id="fCake" type="checkbox"> 爱心蛋糕：放烟花前小猫把蛋糕推下桌，蜡烛亮起，吹一口气（麦克风）或点一下屏幕才开始放烟花（需开着小猫和压轴窗口）</label>
     <label class="check"><input id="fWish" type="checkbox"> 哈气许愿：蜡烛亮起后，屏幕蒙上一层水汽，用手指在雾上写下愿望，写完雾气把愿望收走，才轮到吹蜡烛（需开着爱心蛋糕）</label>
     <label class="check"><input id="fWishStar" type="checkbox"> 愿望变星星：放烟花时，雾上写下的愿望会飞上夜空，先连成一小片星座，再散成满天星（需开着哈气许愿和压轴烟花；只在本机显示一次，不保存）</label>
+    <label class="check"><input id="fEndings" type="checkbox"> 隐藏结局：按「再想想」的次数分成 4 种结局（心有灵犀 / 想了想还是你 / 小猫替你着急 / 好吧愿意），烟花和署名之后弹出结局卡，解锁记录只存在对方本机（只在带「愿意 / 再想想」的模板里出现）</label>
     <div class="mediabox">
       <div class="lbl">你们的小猫</div>
       <div class="field"><label for="fCatName">名字（信封和窗口标题上会用到）</label><input id="fCatName" type="text" maxlength="8" placeholder="比如：团子"></div>

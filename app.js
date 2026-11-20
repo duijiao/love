@@ -33,7 +33,7 @@
   function tplOf(id) { return TEMPLATES[id] || TEMPLATES[defSkin()]; }
   function mkDefaults() {
     var id = defSkin(), t = TEMPLATES[id];
-    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, accept: "", cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, fish: true, randGame: false, catVoice: true, knock: true, selfie: true, selfiePhoto: null, cake: true, wish: true, wishStar: true, angler: false, snow: false, yarn: false, paw: false, balloon: false, entryRand: false };
+    return { skin: id, title: t.title, icon: t.icon, gap: 450, pets: true, layout: "auto", to: "", from: "", envelope: false, finale: false, fx: true, msgs: t.msgs.slice(), media: [], autoVoice: true, photoStyle: "window", bgm: null, puzzle: false, cats: true, fireworks: true, accept: "", cat: { name: "", fur: "theme", pat: "none", eye: "dark", bow: "none" }, wand: true, boxgame: true, fish: true, randGame: false, catVoice: true, knock: true, selfie: true, selfiePhoto: null, cake: true, wish: true, wishStar: true, angler: false, snow: false, yarn: false, paw: false, balloon: false, parcel: false, calendar: false, domino: false, gacha: false, claw: false, mailbox: false, endings: true, entryRand: false, diy: false };
   }
   var DEFAULTS = mkDefaults();
 
@@ -171,7 +171,15 @@
       yarn: !!o.yarn,
       paw: !!o.paw,
       balloon: !!o.balloon,
-      entryRand: !!o.entryRand
+      parcel: !!o.parcel,
+      calendar: !!o.calendar,
+      domino: !!o.domino,
+      gacha: !!o.gacha,
+      claw: !!o.claw,
+      mailbox: !!o.mailbox,
+      endings: o.endings !== false,
+      entryRand: !!o.entryRand,
+      diy: !!o.diy
     };
   }
   function sig(s) { return JSON.stringify(s); }
@@ -1390,13 +1398,63 @@
 
   /* ---- 猫爪拍窗 / 气球带上来：不需要小猫排队的两种出场（窗口之间可以同时进行） ---- */
   var pq = null;
-  function pqAbort() { var me = pq; if (!me) return; pq = null; me.dead = true; me.waiters = []; me.tms.forEach(clearTimeout); me.els.forEach(rmEl); }
-  function pqStart(total) { pqAbort(); return (pq = { dead: false, finished: false, waiters: [], total: total, done: 0, tms: [], els: [] }); }
+  function pqAbort() { var me = pq; if (!me) return; pq = null; me.dead = true; me.waiters = []; me.pend = []; diyBtnShow(false); me.tms.forEach(clearTimeout); me.els.forEach(rmEl); }
+  function pqStart(total) { pqAbort(); return (pq = { dead: false, finished: false, waiters: [], total: total, done: 0, tms: [], els: [], pend: [], auto: false, diy: false, queue: [], busy: 0 }); }
   function pqAdd(it, fn) {
     var me = pq; if (!me || me.dead) { if (it.quick) it.quick(); return; }
-    fn(me, function () { if (me.dead) return; if (++me.done >= me.total) me.tms.push(setTimeout(function () { if (me.dead) return; me.finished = true; me.waiters.splice(0).forEach(function (f) { f(); }); }, 350)); });
+    var freed = false;
+    function run() {
+      me.busy++;
+      fn(me, function () {
+        if (me.dead) return;
+        if (!freed) { freed = true; me.busy--; if (me.diy && !me.auto && me.queue.length) pqTimer(me, me.queue.shift(), 300); } /* 对方自己动手：弄完一个，隔一小会儿再出下一个 */
+        if (++me.done >= me.total) me.tms.push(setTimeout(function () { if (me.dead) return; me.finished = true; diyBtnShow(false); me.waiters.splice(0).forEach(function (f) { f(); }); }, 350));
+      });
+    }
+    if (me.diy && !me.auto && me.busy > 0) { me.queue.push(run); return; } /* 前一个还没弄完，排队等着 */
+    run();
   }
   function pqTimer(me, f, ms) { me.tms.push(setTimeout(function () { if (!me.dead) f(); }, ms)); }
+
+  /* ---- 对方自己动手（拆快递 / 撕日历 / 扭蛋机）----
+     每个道具上方浮一句提示；对方动手了就按 TA 的节奏来，DIY_WAIT 毫秒没动静就由小猫（动画）替 TA 做；
+     「全部帮我弄好」让所有等着的立刻自动完成，之后出现的道具也不再等。只在小猫开着、没有“减少动态效果”时才会走到这里。 */
+  var DIY_WAIT = 4500;
+  function diyBtnShow(on) { var b = document.getElementById("btnDiyAll"); if (b) b.hidden = !on; }
+  function diyAll() {
+    var me = pq; if (!me || me.dead) return;
+    me.auto = true; diyBtnShow(false);
+    me.queue.splice(0).forEach(function (f) { f(); }); /* 排着队的也一起出来 */
+    me.pend.slice().forEach(function (c) { c.done(false); });
+  }
+  /* 在 (x, y) 上方浮一句提示并等对方动手：go(byUser) 只会被调用一次。返回 { poke 重新计时, text 换提示, done 立刻完成 } */
+  function diyStep(me, x, y, text, go, o) {
+    o = o || {};
+    var ctl = { poke: function () {}, text: function () {}, done: function () {} };
+    if (!me || me.dead) return ctl;
+    if (me.auto) { pqTimer(me, function () { go(false); }, o.gap || 160); return ctl; }
+    var vw = stage.clientWidth, tip = mk("div", "diytip", "<span></span><i></i>"), bar = tip.lastChild, fin = false, tm = 0, ba = null, wait = o.ms || DIY_WAIT;
+    tip.firstChild.textContent = text;
+    tip.style.left = Math.max(84, Math.min(vw - 84, x)) + "px"; tip.style.top = Math.max(40, y) + "px";
+    stage.appendChild(tip); me.els.push(tip); me.pend.push(ctl);
+    function arm() {
+      clearTimeout(tm); if (fin || me.dead) return;
+      tm = setTimeout(function () { ctl.done(false); }, wait); me.tms.push(tm);
+      try { if (ba) ba.cancel(); ba = bar.animate([{ transform: "scaleX(1)" }, { transform: "scaleX(0)" }], { duration: wait, easing: "linear", fill: "forwards" }); } catch (e) {}
+    }
+    ctl.poke = arm;
+    ctl.text = function (t) { tip.firstChild.textContent = t; };
+    ctl.done = function (byUser) {
+      if (fin || me.dead) return; fin = true; clearTimeout(tm);
+      var i = me.pend.indexOf(ctl); if (i >= 0) me.pend.splice(i, 1);
+      try { var fa = tip.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 160, fill: "forwards" }); fa.onfinish = function () { rmEl(tip); }; } catch (e) { rmEl(tip); }
+      go(!!byUser);
+    };
+    arm();
+    return ctl;
+  }
+  /* 让一个元素变成“可以点 / 划”的：加高亮和手势，返回撤销函数 */
+  function diyArm(el) { el.classList.add("diy"); return function () { el.classList.remove("diy"); }; }
   /* 肉垫：像素风猫爪，fur 毛色，bean 肉垫色；stamp 时只画一种颜色 */
   function pawSvg(cell, fur, bean, stamp) {
     var N = 20, g = [], x, y, out = "";
@@ -1485,14 +1543,402 @@
     });
   }
 
+  function parcelEnter(act, vw, vh) { /* 快递盒从屏幕外被“扔”进来，猫爪划开胶带，箱盖弹开，窗口从泡沫粒里冒出来，空箱子滚走；「对方自己动手」时改成对方在盒子上划开胶带 */
+    pqAdd(act, function (me, done) {
+      var el = act.el, tx = act.cx, ty = act.cy, z0 = el.style.zIndex, side = act.idx % 2 ? 1 : -1, cf = catCfg("a");
+      var bw = Math.min(vw - 12, Math.max(150, act.w + 30)), bh = Math.min(vh - 12, Math.max(110, act.h + 30)), bl = tx - bw / 2, bt = ty - bh / 2;
+      var box = mk("div", "parcel", '<i class="pflap pl"></i><i class="pflap pr"></i><i class="ptape"></i><i class="pcut"></i><span class="pfrag">易碎 ↑↑</span><span class="plabel"></span>');
+      box.querySelector(".plabel").textContent = (state.to ? "给 " + state.to : "小心轻放") + " 的快递";
+      box.style.cssText = "left:" + bl + "px;top:" + bt + "px;width:" + bw + "px;height:" + bh + "px;transform-origin:50% 100%";
+      var tape = box.querySelector(".ptape"), pl = box.querySelector(".pl"), pr = box.querySelector(".pr");
+      stage.appendChild(box); me.els.push(box);
+      function puff(n, x0, y0, spread, col, bord) {
+        for (var i = 0; i < n; i++) {
+          var c = mk("i", "snow-chunk"), sz = 5 + Math.random() * 6, dx = (Math.random() - 0.5) * spread, up = 20 + Math.random() * 46;
+          c.style.cssText = "left:" + (x0 + (Math.random() - 0.5) * bw * 0.7) + "px;top:" + y0 + "px;width:" + sz + "px;height:" + sz + "px;background:" + col + ";border-color:" + bord + ";border-radius:40%"; stage.appendChild(c); me.els.push(c);
+          try { var ca = c.animate([{ transform: "translate(-50%,-50%)", opacity: 1 }, { transform: "translate(calc(-50% + " + (dx * 0.6).toFixed(1) + "px),calc(-50% - " + up.toFixed(1) + "px)) rotate(" + (Math.random() * 200 - 100).toFixed(0) + "deg)", opacity: 1, offset: 0.42 }, { transform: "translate(calc(-50% + " + dx.toFixed(1) + "px),calc(-50% + " + (16 + Math.random() * 40).toFixed(1) + "px)) rotate(" + (Math.random() * 400 - 200).toFixed(0) + "deg)", opacity: 0 }], { duration: 800 + Math.random() * 500, easing: "ease-in-out" }); ca.onfinish = (function (c) { return function () { rmEl(c); }; })(c); } catch (e) { rmEl(c); }
+        }
+      }
+      /* 1 扔进来 */
+      var dx0 = side * (vw * 0.5 + bw), dy0 = -vh * 0.35;
+      try { box.animate([{ transform: "translate(" + dx0 + "px," + dy0 + "px) rotate(" + side * 200 + "deg)" }, { transform: "translate(" + dx0 * 0.3 + "px," + dy0 * 1.1 + "px) rotate(" + side * 80 + "deg)", offset: 0.5 }, { transform: "translate(0,0) rotate(0deg)" }], { duration: 560, easing: "cubic-bezier(.3,.2,.6,1)", fill: "backwards" }); } catch (e) {}
+      pqTimer(me, function () { /* 2 落地：咚，压扁弹一下 */
+        sfxThud(1.0, 0.8); shakeStage(3);
+        try { box.animate([{ transform: "scale(1.07,.88)" }, { transform: "scale(.98,1.04)", offset: 0.6 }, { transform: "none" }], { duration: 280, easing: "ease-out" }); } catch (e) {}
+        puff(7, tx, bt + bh, 90, "rgba(205,190,165,.85)", "rgba(150,130,100,.5)");
+      }, 560);
+      /* 胶带被划开 → 箱盖弹开 → 窗口冒出来 → 空箱子翻走 */
+      function rip() { /* 嘶啦——胶带被划开 */
+        if (soundOn && AC) { var t = AC.currentTime; for (var k = 0; k < 6; k++) noiseHit(t + k * 0.035, 0.05, 3600 - k * 260, 1, 0.14, "bandpass", 2); }
+        try { tape.animate([{ transform: "none", opacity: 0.95 }, { transform: "translateY(-8px) rotate(7deg) scaleX(.5)", opacity: 0 }], { duration: 280, easing: "ease-out", fill: "forwards" }); } catch (e) { tape.style.opacity = 0; }
+        box.querySelector(".pcut").style.opacity = 0;
+      }
+      function flaps() { /* 4 箱盖弹开 */
+        try { pl.animate([{ transform: "rotate(0)" }, { transform: "rotate(-118deg)" }], { duration: 280, easing: "cubic-bezier(.3,1.6,.5,1)", fill: "forwards" }); pr.animate([{ transform: "rotate(0)" }, { transform: "rotate(118deg)" }], { duration: 280, easing: "cubic-bezier(.3,1.6,.5,1)", fill: "forwards" }); } catch (e) { pl.style.opacity = pr.style.opacity = 0; }
+        if (soundOn && AC) { var t2 = AC.currentTime; noiseHit(t2, 0.07, 700, 0.9, 0.3, "lowpass", 2); noiseHit(t2 + 0.04, 0.06, 2400, 0.8, 0.14, "bandpass", 2); }
+      }
+      function pop() { /* 5 窗口从泡沫粒里冒出来 */
+        el.style.zIndex = 4996; el.style.pointerEvents = "none"; act.show();
+        try { var ea = el.animate([{ opacity: 0, transform: "translateY(" + bh * 0.25 + "px) scale(.35)" }, { opacity: 1, transform: "translateY(" + -bh * 0.1 + "px) scale(1.1)", offset: 0.55 }, { opacity: 1, transform: "none" }], { duration: 520, easing: "ease-out", fill: "backwards" }); ea.onfinish = ea.oncancel = function () { el.style.zIndex = z0; el.style.pointerEvents = ""; }; } catch (e) { el.style.zIndex = z0; el.style.pointerEvents = ""; }
+        puff(16, tx, bt + bh * 0.2, bw * 1.1, "#fff7e0", "#e8d3a8");
+        sfxMeow("happy", [0, 2, 4, 7, 9][act.idx % 5]); act.land();
+      }
+      function leave() { /* 6 空箱子翻出屏幕 */
+        try { var la = box.animate([{ transform: "none", opacity: 1 }, { transform: "translate(" + side * bw * 0.6 + "px," + vh * 0.12 + "px) rotate(" + side * 34 + "deg)", opacity: 0 }], { duration: 420, easing: "ease-in", fill: "forwards" }); la.onfinish = function () { rmEl(box); }; } catch (e) { rmEl(box); }
+      }
+      function finish(T) { pqTimer(me, rip, T.rip); pqTimer(me, flaps, T.flaps); pqTimer(me, pop, T.pop); pqTimer(me, leave, T.leave); pqTimer(me, done, T.done); }
+      function pawCut() { /* 3 猫爪从上面伸下来，在胶带上划过去 */
+        var pw = Math.max(70, Math.min(110, bw * 0.4)), cell = pw / 20, run = bw * 0.42;
+        var paw = mk("div", "bigpaw", pawSvg(cell, cf.fur, "#ff9fb5", false));
+        paw.style.cssText = "left:" + (tx - run * 0.5) + "px;top:" + (bt + pw * 0.15) + "px"; stage.appendChild(paw); me.els.push(paw);
+        var up = -(bt + pw * 1.2), T = "translate(-50%,-50%) ";
+        try {
+          var pa = paw.animate([{ transform: T + "translate(0," + up + "px)" }, { transform: T + "translate(0,0)", offset: 0.34 }, { transform: T + "translate(" + run + "px,0)", offset: 0.66 }, { transform: T + "translate(" + (run + 24) + "px," + up + "px)" }], { duration: 780, easing: "ease-in-out", fill: "forwards" });
+          pa.onfinish = function () { rmEl(paw); };
+        } catch (e) { rmEl(paw); }
+      }
+      var AUTO_T = { rip: 260, flaps: 520, pop: 640, leave: 900, done: 1250 };
+      if (!me.diy) { pqTimer(me, function () { pawCut(); finish(AUTO_T); }, 860); return; }
+      /* 对方自己动手：在盒子上划一划，胶带跟着裂开；几秒没动静就让小猫来划 */
+      pqTimer(me, function () {
+        var need = Math.max(80, Math.min(bw, bh) * 0.95), len = 0, lx = 0, ly = 0, down = false, shut = false, stepN = 0, cut = box.querySelector(".pcut"), off = diyArm(box), ctl;
+        function pd(e) { if (shut) return; down = true; lx = e.clientX; ly = e.clientY; try { box.setPointerCapture(e.pointerId); } catch (er) {} ctl.poke(); e.preventDefault(); }
+        function pm(e) {
+          if (!down || shut) return;
+          var dx = e.clientX - lx, dy = e.clientY - ly; len += Math.sqrt(dx * dx + dy * dy); lx = e.clientX; ly = e.clientY;
+          var pr0 = Math.min(1, len / need); cut.style.height = (pr0 * 100) + "%"; ctl.poke();
+          var st = Math.floor(pr0 * 4); if (st > stepN) { stepN = st; if (soundOn && AC) noiseHit(AC.currentTime, 0.05, 3400 - st * 200, 1, 0.12, "bandpass", 2); }
+          if (pr0 >= 1) ctl.done(true);
+        }
+        function pu() { down = false; }
+        box.addEventListener("pointerdown", pd); box.addEventListener("pointermove", pm); box.addEventListener("pointerup", pu); box.addEventListener("pointercancel", pu);
+        ctl = diyStep(me, tx, bt - 6, "在盒子上划一划，划开胶带", function (byUser) {
+          shut = true; off(); cut.style.height = "100%";
+          if (byUser) finish({ rip: 0, flaps: 260, pop: 380, leave: 640, done: 990 });
+          else { pawCut(); finish(AUTO_T); }
+        });
+      }, 620);
+    });
+  }
+
+  /* 碎屑 / 彩纸：从 (x0,y0) 抛起再落下 */
+  function pqBits(me, x0, y0, n, spread, cols) {
+    for (var i = 0; i < n; i++) {
+      var c = mk("i", "snow-chunk"), sz = 5 + Math.random() * 6, dx = (Math.random() - 0.5) * spread, up = 24 + Math.random() * 50;
+      c.style.cssText = "left:" + x0 + "px;top:" + y0 + "px;width:" + sz + "px;height:" + sz + "px;background:" + cols[i % cols.length] + ";border-color:rgba(0,0,0,.18);border-radius:30%"; stage.appendChild(c); me.els.push(c);
+      try { var ca = c.animate([{ transform: "translate(-50%,-50%)", opacity: 1 }, { transform: "translate(calc(-50% + " + (dx * 0.6).toFixed(1) + "px),calc(-50% - " + up.toFixed(1) + "px)) rotate(" + (Math.random() * 200 - 100).toFixed(0) + "deg)", opacity: 1, offset: 0.42 }, { transform: "translate(calc(-50% + " + dx.toFixed(1) + "px),calc(-50% + " + (16 + Math.random() * 40).toFixed(1) + "px)) rotate(" + (Math.random() * 400 - 200).toFixed(0) + "deg)", opacity: 0 }], { duration: 800 + Math.random() * 500, easing: "ease-in-out" }); ca.onfinish = (function (c) { return function () { rmEl(c); }; })(c); } catch (e) { rmEl(c); }
+    }
+  }
+  /* 窗口从某处“冒”出来的通用收尾：置顶、显示、动画结束后还原层级 */
+  function pqReveal(act, z0, frames, opt) {
+    var el = act.el; el.style.zIndex = 4996; el.style.pointerEvents = "none"; act.show();
+    function back() { el.style.zIndex = z0; el.style.pointerEvents = ""; el.style.transformOrigin = ""; }
+    try { var ea = el.animate(frames, opt); ea.onfinish = ea.oncancel = back; } catch (e) { back(); }
+  }
+
+  function calendarEnter(act, vw, vh) { /* 一本挂历挂到窗口位置，小猫一爪子一页页拍掉旧日期，最后一页飞走，窗口露出来；「对方自己动手」时改成对方点一下撕一页 */
+    pqAdd(act, function (me, done) {
+      var el = act.el, tx = act.cx, ty = act.cy, z0 = el.style.zIndex, side = act.idx % 2 ? 1 : -1, cf = catCfg("a");
+      var bw = Math.min(vw - 12, Math.max(150, act.w + 20)), bh = Math.min(vh - 12, Math.max(120, act.h + 20)), bl = tx - bw / 2, bt = ty - bh / 2;
+      var N = 3, now = Date.now(), pad = mk("div", "calpad", '<i class="calring l"></i><i class="calring r"></i>'), pages = [], k;
+      pad.style.cssText = "left:" + bl + "px;top:" + bt + "px;width:" + bw + "px;height:" + bh + "px;transform-origin:50% 0";
+      for (k = N - 1; k >= 0; k--) { /* 第 0 页在最上面，日期依次走到今天 */
+        var d = new Date(now - (N - 1 - k) * 86400000), pg = mk("div", "calpg", '<div class="cph"></div><div class="cpn"></div><div class="cpw"></div>');
+        pg.querySelector(".cph").textContent = (d.getMonth() + 1) + "月"; pg.querySelector(".cpn").textContent = d.getDate(); pg.querySelector(".cpw").textContent = "周" + "日一二三四五六".charAt(d.getDay());
+        pg.style.setProperty("--n", Math.round(bh * 0.4) + "px"); pg.style.zIndex = N - k; pages[k] = pg; pad.appendChild(pg);
+      }
+      stage.appendChild(pad); me.els.push(pad);
+      try { pad.animate([{ transform: "translateY(-30px) scale(.7) rotate(" + side * 6 + "deg)", opacity: 0 }, { transform: "translateY(4px) scale(1.03) rotate(" + -side * 2 + "deg)", opacity: 1, offset: 0.6 }, { transform: "none", opacity: 1 }], { duration: 340, easing: "ease-out", fill: "backwards" }); } catch (e) {}
+      pqTimer(me, function () { sfxThud(0.6, 0.6); }, 300);
+      function fly(k) { /* 刺啦：这一页被拍飞 */
+        if (soundOn && AC) { var t = AC.currentTime; for (var j = 0; j < 4; j++) noiseHit(t + j * 0.03, 0.04, 3200 - j * 300, 1, 0.12, "bandpass", 2); }
+        shakeStage(2);
+        try { var la = pages[k].animate([{ transform: "none", opacity: 1 }, { transform: "rotate(" + -side * 10 + "deg) translateY(-6px)", offset: 0.22 }, { transform: "translate(" + -side * (vw * 0.5 + bw) + "px," + -vh * 0.15 + "px) rotate(" + -side * 70 + "deg)", opacity: 0.9 }], { duration: 520, easing: "ease-in", fill: "forwards" }); la.onfinish = function () { rmEl(pages[k]); }; } catch (e) { rmEl(pages[k]); }
+      }
+      function tear(k, byUser) {
+        if (byUser) { fly(k); return; } /* 对方自己撕：手指就是“爪子”，直接飞 */
+        var pw = Math.max(60, Math.min(90, bw * 0.35)), T = "translate(-50%,-50%) ", far = side * (bw * 0.5 + pw);
+        var paw = mk("div", "bigpaw", pawSvg(pw / 20, cf.fur, "#ff9fb5", false)); paw.style.cssText = "left:" + tx + "px;top:" + ty + "px"; stage.appendChild(paw); me.els.push(paw);
+        try { var pa = paw.animate([{ transform: T + "translate(" + far + "px," + pw * 0.2 + "px)" }, { transform: T + "translate(" + side * bw * 0.16 + "px," + -bh * 0.16 + "px)", offset: 0.42 }, { transform: T + "translate(" + far + "px," + -bh * 0.1 + "px)" }], { duration: 380, easing: "ease-in-out" }); pa.onfinish = function () { rmEl(paw); }; } catch (e) { rmEl(paw); }
+        pqTimer(me, function () { fly(k); }, 150);
+      }
+      function reveal() { /* 最后一页飞走，窗口从挂历后面弹出来 */
+        pqReveal(act, z0, [{ opacity: 0, transform: "scale(.7) rotate(" + -side * 4 + "deg)" }, { opacity: 1, transform: "scale(1.05)", offset: 0.6 }, { opacity: 1, transform: "none" }], { duration: 380, easing: "ease-out", fill: "backwards" });
+        try { var fa = pad.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 260, fill: "forwards" }); fa.onfinish = function () { rmEl(pad); }; } catch (e) { rmEl(pad); }
+        pqBits(me, tx, ty, 14, bw, ["#fffaf0", "#e0566b", "#f3d9a8"]);
+        sfxMeow("happy", [0, 2, 4, 7, 9][act.idx % 5]); act.land();
+      }
+      if (!me.diy) {
+        for (k = 0; k < N; k++) (function (k) { pqTimer(me, function () { tear(k, false); }, 420 + k * 340); })(k);
+        pqTimer(me, reveal, 420 + (N - 1) * 340 + 360);
+        pqTimer(me, done, 420 + (N - 1) * 340 + 900);
+        return;
+      }
+      /* 对方自己动手：点一下撕一页；几秒没动静，小猫替 TA 撕这一页 */
+      var cur = null, shut = false, off = diyArm(pad), idx = 0;
+      pad.addEventListener("pointerdown", function (e) { if (shut) return; e.preventDefault(); if (cur) cur.done(true); });
+      function next() {
+        if (idx >= N) { off(); shut = true; return; }
+        var kk = idx;
+        cur = diyStep(me, tx, bt - 6, "点一下，撕掉这页（还剩 " + (N - kk) + " 页）", function (byUser) {
+          tear(kk, byUser); idx++;
+          if (idx >= N) { off(); shut = true; pqTimer(me, reveal, byUser ? 280 : 360); pqTimer(me, done, byUser ? 820 : 900); }
+          else pqTimer(me, next, byUser ? 200 : 300);
+        }, { ms: 3800, gap: 120 });
+      }
+      pqTimer(me, next, 420);
+    });
+  }
+
+  function dominoEnter(act, vw, vh) { /* 一排多米诺立在窗口脚下，小猫一爪子推倒第一块，哗啦啦倒过去，最后一块撞出窗口 */
+    pqAdd(act, function (me, done) {
+      var el = act.el, tx = act.cx, ty = act.cy, z0 = el.style.zIndex, cf = catCfg("a");
+      var n = 8, dw = 10, dh = 34, COLS = ["#fffaf0", "#ffd9e2", "#d9ecff", "#e6f7d6"], dir = tx > vw / 2 ? 1 : -1;
+      var room = dir > 0 ? tx - 12 : vw - 12 - tx, sp = Math.max(10, Math.min(24, room / (n - 1))), yb = Math.min(ty + act.h / 2 + 8, vh - 76);
+      var row = mk("div", "dmnrow"), doms = [], i;
+      for (i = 0; i < n; i++) {
+        var dm = mk("i", "dmn"), x = tx - dir * (n - 1 - i) * sp;
+        dm.style.cssText = "left:" + (x - dw / 2) + "px;top:" + (yb - dh) + "px;width:" + dw + "px;height:" + dh + "px;background:" + COLS[i % 4] + ";transform-origin:" + (dir > 0 ? "100% 100%" : "0 100%");
+        try { dm.animate([{ transform: "translateY(-40px)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 200, delay: i * 30, easing: "ease-out", fill: "backwards" }); } catch (e) {}
+        doms.push(dm); row.appendChild(dm);
+      }
+      stage.appendChild(row); me.els.push(row);
+      var x0 = tx - dir * (n - 1) * sp, pw = 64, T0 = 520, F0 = T0 + 150;
+      pqTimer(me, function () { /* 猫爪从起点那一侧伸过来轻轻一推 */
+        var paw = mk("div", "bigpaw", pawSvg(pw / 20, cf.fur, "#ff9fb5", false)), T = "translate(-50%,-50%) ", far = -dir * (pw + 60);
+        paw.style.cssText = "left:" + (x0 - dir * 6) + "px;top:" + (yb - dh * 0.75) + "px"; stage.appendChild(paw); me.els.push(paw);
+        try { var pa = paw.animate([{ transform: T + "translate(" + far + "px,0)" }, { transform: T + "translate(" + dir * 4 + "px,0)", offset: 0.45 }, { transform: T + "translate(" + far + "px,0)" }], { duration: 340, easing: "ease-in-out" }); pa.onfinish = function () { rmEl(paw); }; } catch (e) { rmEl(paw); }
+      }, T0);
+      doms.forEach(function (dm, i) {
+        pqTimer(me, function () {
+          try { dm.animate([{ transform: "rotate(0deg)" }, { transform: "rotate(" + dir * 82 + "deg)" }], { duration: 230, easing: "cubic-bezier(.5,0,.9,.6)", fill: "forwards" }); } catch (e) {}
+          if (soundOn && AC) noiseHit(AC.currentTime + 0.15, 0.03, 1500 + i * 110, 1, 0.16, "bandpass", 2);
+        }, F0 + i * 85);
+      });
+      var P = F0 + (n - 1) * 85 + 120;
+      pqTimer(me, function () { /* 最后一块撞上去：窗口从底边弹起来 */
+        el.style.transformOrigin = "50% 100%";
+        pqReveal(act, z0, [{ opacity: 0, transform: "scale(.25)" }, { opacity: 1, transform: "scale(1.12,.92)", offset: 0.45 }, { opacity: 1, transform: "scale(.97,1.04)", offset: 0.75 }, { opacity: 1, transform: "none" }], { duration: 480, easing: "ease-out", fill: "backwards" });
+        sfxThud(1.1, 0.9); shakeStage(3); pqBits(me, tx, ty + act.h / 2, 12, act.w, ["#ffd9e2", "#d9ecff", "#e6f7d6", "#fffaf0"]);
+        sfxMeow("happy", [0, 2, 4, 7, 9][act.idx % 5]); act.land();
+      }, P);
+      pqTimer(me, function () { try { var fa = row.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, fill: "forwards" }); fa.onfinish = function () { rmEl(row); }; } catch (e) { rmEl(row); } }, P + 200);
+      pqTimer(me, done, P + 650);
+    });
+  }
+
+  function gachaEnter(act, vw, vh) { /* 一台扭蛋机滑进来，小猫拧一下旋钮，掉出一颗扭蛋，摇两下“啪”地打开，窗口从蛋里弹出来；「对方自己动手」时改成对方点一下转旋钮、再点一下开蛋 */
+    pqAdd(act, function (me, done) {
+      var el = act.el, tx = act.cx, ty = act.cy, z0 = el.style.zIndex, side = act.idx % 2 ? 1 : -1, MW = 84, MH = 150;
+      var COLS = ["#ff7a9c", "#ffc24a", "#6cc3ff", "#8ee39a", "#c49bff"], c1 = COLS[act.idx % 5], c2 = COLS[(act.idx + 2) % 5], i;
+      var mach = mk("div", "gmach", '<div class="gdome"></div><div class="gbase"><i class="gknob"></i><i class="gout"></i></div>');
+      mach.style.cssText = "left:" + (tx - MW / 2) + "px;top:" + (ty - MH / 2) + "px";
+      var dome = mach.querySelector(".gdome"), knob = mach.querySelector(".gknob"), BP = [[10, 46], [30, 50], [50, 44], [20, 28], [42, 26]];
+      for (i = 0; i < 5; i++) { var bn = mk("i", "gbean"); bn.style.cssText = "left:" + BP[i][0] + "px;top:" + BP[i][1] + "px;background:" + COLS[(i + act.idx) % 5]; dome.appendChild(bn); }
+      stage.appendChild(mach); me.els.push(mach);
+      try { mach.animate([{ transform: "translateX(" + side * (vw * 0.5 + MW) + "px)" }, { transform: "translateX(" + -side * 6 + "px)", offset: 0.8 }, { transform: "none" }], { duration: 340, easing: "ease-out", fill: "backwards" }); } catch (e) {}
+      pqTimer(me, function () { sfxThud(0.7, 0.6); }, 330);
+      var cy0 = ty + MH / 2 - 30, dyc = MH / 2 + 4, cap = mk("div", "gcap", '<i class="gt"></i><i class="gb"></i>');
+      cap.style.cssText = "left:" + (tx - 19) + "px;top:" + cy0 + "px;opacity:0"; cap.querySelector(".gt").style.background = c1; stage.appendChild(cap); me.els.push(cap);
+      function turn() { /* 投币、拧旋钮 */
+        if (soundOn && AC) tone(1760, AC.currentTime, 0.12, 0.07, "triangle");
+        try { knob.animate([{ transform: "rotate(0deg)" }, { transform: "rotate(540deg)" }], { duration: 480, easing: "ease-in-out" }); mach.animate([{ transform: "none" }, { transform: "translateX(2px) rotate(1deg)" }, { transform: "translateX(-2px) rotate(-1deg)" }, { transform: "none" }], { duration: 130, iterations: 4 }); dome.animate([{ transform: "translateY(0)" }, { transform: "translateY(-3px)" }, { transform: "translateY(0)" }], { duration: 120, iterations: 4 }); } catch (e) {}
+        for (var k = 0; k < 4; k++) pqTimer(me, function () { if (soundOn && AC) noiseHit(AC.currentTime, 0.025, 2200, 1, 0.16, "bandpass", 2); }, k * 120);
+      }
+      function drop() { /* 掉出来，弹两下 */
+        cap.style.opacity = 1;
+        try {
+          var ca = cap.animate([{ transform: "translateY(-6px) scale(.6) rotate(0deg)" }, { transform: "translateY(20px) rotate(180deg)", offset: 0.35 }, { transform: "translateY(34px) rotate(300deg)", offset: 0.6 }, { transform: "translateY(24px) rotate(330deg)", offset: 0.8 }, { transform: "translateY(34px) rotate(360deg)" }], { duration: 560, easing: "ease-in", fill: "forwards" });
+          ca.onfinish = function () { cap.style.top = (cy0 + 34) + "px"; ca.cancel(); };
+        } catch (e) { cap.style.top = (cy0 + 34) + "px"; }
+        pqTimer(me, function () { sfxThud(0.5, 0.5); }, 200); pqTimer(me, function () { sfxThud(0.4, 0.4); }, 460);
+      }
+      function shake() { /* 摇两下 */
+        try { cap.animate([{ transform: "rotate(0)" }, { transform: "rotate(-14deg)" }, { transform: "rotate(12deg)" }, { transform: "rotate(-8deg)" }, { transform: "rotate(0)" }], { duration: 420 }); } catch (e) {}
+        for (var k = 0; k < 3; k++) pqTimer(me, function () { if (soundOn && AC) tone(900, AC.currentTime, 0.04, 0.06, "square"); }, k * 130);
+      }
+      function open() { /* 啪：蛋壳打开，窗口从蛋里弹出来；机器滑走 */
+        var dy = cy0 + 34 + 19 - ty;
+        try { cap.querySelector(".gt").animate([{ transform: "none", opacity: 1 }, { transform: "translate(-8px,-22px) rotate(-50deg)", opacity: 0 }], { duration: 320, fill: "forwards" }); cap.querySelector(".gb").animate([{ transform: "none", opacity: 1 }, { transform: "translate(8px,14px) rotate(30deg)", opacity: 0 }], { duration: 320, fill: "forwards" }); } catch (e) { rmEl(cap); }
+        pqReveal(act, z0, [{ opacity: 0, transform: "translateY(" + dy + "px) scale(.06)" }, { opacity: 1, transform: "translateY(" + -act.h * 0.04 + "px) scale(1.1)", offset: 0.6 }, { opacity: 1, transform: "none" }], { duration: 520, easing: "cubic-bezier(.2,.9,.3,1)", fill: "backwards" });
+        pqBits(me, tx, ty + dy, 14, act.w, [c1, c2, "#fff7e0"]);
+        if (soundOn && AC) { var t = AC.currentTime; noiseHit(t, 0.07, 800, 0.9, 0.3, "lowpass", 2); noiseHit(t + 0.04, 0.06, 2600, 0.8, 0.14, "bandpass", 2); }
+        sfxMeow("happy", [0, 2, 4, 7, 9][act.idx % 5]); act.land();
+        pqTimer(me, function () { try { var la = mach.animate([{ transform: "none" }, { transform: "translateX(" + -side * (vw * 0.5 + MW) + "px)" }], { duration: 420, easing: "ease-in", fill: "forwards" }); la.onfinish = function () { rmEl(mach); rmEl(cap); }; } catch (e) { rmEl(mach); rmEl(cap); } }, 60);
+      }
+      if (!me.diy) {
+        pqTimer(me, turn, 380); pqTimer(me, drop, 840); pqTimer(me, shake, 1380); pqTimer(me, open, 1800); pqTimer(me, done, 2350);
+        return;
+      }
+      /* 对方自己动手：第一下点机器转旋钮，掉出扭蛋后第二下点扭蛋把它打开；每一步几秒没动静就自动替 TA 做 */
+      var tipY = ty - MH / 2 - 6, shut1 = false, shut2 = false, offM = function () {}, offC = function () {};
+      function step2() {
+        offC = diyArm(cap);
+        var ctl2 = diyStep(me, tx, tipY, "点一下掉出来的扭蛋 ↓", function () {
+          shut2 = true; offC(); offM(); shake(); pqTimer(me, open, 420); pqTimer(me, done, 970);
+        });
+        function tap2(e) { if (shut2) return; e.preventDefault(); ctl2.done(true); }
+        cap.addEventListener("pointerdown", tap2); mach.addEventListener("pointerdown", tap2);
+        offM = diyArm(mach);
+      }
+      pqTimer(me, function () {
+        offM = diyArm(mach);
+        var ctl1 = diyStep(me, tx, tipY, "点一下，转动旋钮", function () {
+          shut1 = true; offM(); turn(); pqTimer(me, drop, 460); pqTimer(me, step2, 460 + 600);
+        });
+        mach.addEventListener("pointerdown", function (e) { if (shut1) return; e.preventDefault(); ctl1.done(true); });
+      }, 380);
+    });
+  }
+
+  function clawEnter(act, vw, vh) { /* 抓娃娃机：机器滑进来，爪子抓起娃娃送到出口，窗口从出口弹出来；「对方自己动手」时爪子来回摆，对方点一下放下爪子（差一点会再给一次机会） */
+    pqAdd(act, function (me, done) {
+      var el = act.el, tx = act.cx, ty = act.cy, z0 = el.style.zIndex, side = act.idx % 2 ? 1 : -1;
+      var CW = 150, CH = 196, L0 = 14, D = 40, DROPY = 51, chX = 35, chY = 162, lo = 24, hi = 126;
+      var COLS = ["#ff7a9c", "#ffc24a", "#6cc3ff", "#8ee39a", "#c49bff"], c1 = COLS[act.idx % 5], c2 = COLS[(act.idx + 2) % 5];
+      var cl = Math.max(6, Math.min(vw - CW - 6, tx - CW / 2)), ct = Math.max(6, Math.min(vh - CH - 6, ty - CH / 2));
+      var px0 = 75 + ((act.idx * 37) % 61 - 30);
+      var mach = mk("div", "cmach", '<div class="cglass"><i class="crail"></i></div><div class="cbase"><i class="cchute"></i><i class="cbtn"></i></div><div class="cclaw"><i class="ccable"></i><div class="chead"><i class="cp l"></i><i class="cp r"></i></div></div><i class="cprize"></i>');
+      mach.style.cssText = "left:" + cl + "px;top:" + ct + "px";
+      var claw = mach.querySelector(".cclaw"), cable = mach.querySelector(".ccable"), head = mach.querySelector(".chead"), pl = mach.querySelector(".cp.l"), pr = mach.querySelector(".cp.r"), prize = mach.querySelector(".cprize");
+      prize.style.cssText = "left:" + (px0 - 17) + "px;top:94px;background:" + c1;
+      var cxp = hi, hy = 0, carry = false, sw = null, OPEN = [26, -26], SHUT = [-6, 6];
+      claw.style.transform = "translateX(" + cxp + "px)"; pl.style.transform = "rotate(26deg)"; pr.style.transform = "rotate(-26deg)";
+      stage.appendChild(mach); me.els.push(mach);
+      try { mach.animate([{ transform: "translateX(" + side * (vw * 0.5 + CW) + "px)" }, { transform: "translateX(" + -side * 6 + "px)", offset: 0.8 }, { transform: "none" }], { duration: 340, easing: "ease-out", fill: "backwards" }); } catch (e) {}
+      pqTimer(me, function () { sfxThud(0.8, 0.6); }, 330);
+      function prongs(open, ms) {
+        var to = open ? OPEN : SHUT, from = open ? SHUT : OPEN;
+        pl.style.transform = "rotate(" + to[0] + "deg)"; pr.style.transform = "rotate(" + to[1] + "deg)";
+        try { pl.animate([{ transform: "rotate(" + from[0] + "deg)" }, { transform: "rotate(" + to[0] + "deg)" }], { duration: ms }); pr.animate([{ transform: "rotate(" + from[1] + "deg)" }, { transform: "rotate(" + to[1] + "deg)" }], { duration: ms }); } catch (e) {}
+      }
+      function mv(x, y, ms, ease) { /* 爪子（连着钢丝、娃娃）从当前位置移到 (x, y) */
+        var x0 = cxp, y0 = hy, k0 = (L0 + y0) / L0, k1 = (L0 + y) / L0, o = { duration: ms, easing: ease || "ease-in-out" };
+        cxp = x; hy = y;
+        claw.style.transform = "translateX(" + x + "px)"; head.style.transform = "translateY(" + y + "px)"; cable.style.transform = "scaleY(" + k1 + ")";
+        try { claw.animate([{ transform: "translateX(" + x0 + "px)" }, { transform: "translateX(" + x + "px)" }], o); head.animate([{ transform: "translateY(" + y0 + "px)" }, { transform: "translateY(" + y + "px)" }], o); cable.animate([{ transform: "scaleY(" + k0 + ")" }, { transform: "scaleY(" + k1 + ")" }], o); } catch (e) {}
+        if (carry) { var a0 = "translate(" + (x0 - px0) + "px," + (y0 - D) + "px)", a1 = "translate(" + (x - px0) + "px," + (y - D) + "px)"; prize.style.transform = a1; try { prize.animate([{ transform: a0 }, { transform: a1 }], o); } catch (e) {} }
+      }
+      function curX() { try { return new DOMMatrixReadOnly(getComputedStyle(claw).transform).m41; } catch (e) { return cxp; } }
+      function drop() { /* 爪子一松，娃娃掉进出口 */
+        prongs(true, 150); carry = false;
+        var a0 = "translate(" + (chX - px0) + "px," + -D + "px)", am = "translate(" + (chX - px0) + "px," + (DROPY - 12) + "px)", a1 = "translate(" + (chX - px0) + "px," + DROPY + "px)";
+        prize.style.transform = a1;
+        try { prize.animate([{ transform: a0 }, { transform: am, offset: 0.7 }, { transform: a1 }], { duration: 320, easing: "ease-in" }); } catch (e) {}
+        pqTimer(me, function () { sfxThud(0.5, 0.5); }, 260);
+      }
+      function pop() { /* 窗口从出口里弹出来，机器滑走 */
+        var dx = cl + chX - tx, dy = ct + chY - ty;
+        pqReveal(act, z0, [{ opacity: 0, transform: "translate(" + dx + "px," + dy + "px) scale(.06)" }, { opacity: 1, transform: "translate(" + dx * 0.1 + "px," + (dy * 0.1 - 20) + "px) scale(1.08)", offset: 0.6 }, { opacity: 1, transform: "none" }], { duration: 560, easing: "cubic-bezier(.2,.9,.3,1)", fill: "backwards" });
+        try { prize.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 260, fill: "forwards" }); } catch (e) { prize.style.opacity = 0; }
+        pqBits(me, cl + chX, ct + chY, 14, 70, [c1, c2, "#fff7e0"]);
+        if (soundOn && AC) { var t = AC.currentTime; tone(1320, t, 0.1, 0.07, "triangle"); tone(1760, t + 0.08, 0.14, 0.07, "triangle"); }
+        sfxMeow("happy", [0, 2, 4, 7, 9][act.idx % 5]); act.land();
+        pqTimer(me, function () { try { var la = mach.animate([{ transform: "none" }, { transform: "translateX(" + -side * (vw * 0.5 + CW) + "px)" }], { duration: 420, easing: "ease-in", fill: "forwards" }); la.onfinish = function () { rmEl(mach); }; } catch (e) { rmEl(mach); } }, 60);
+      }
+      function grab(hit, onMiss) { /* 爪子在 cxp 上方：下爪 → 合爪 → 提起；抓到了就送去出口，没抓到就空爪回来 */
+        var t = 0;
+        if (hit) { mv(px0, 0, 160); t = 170; }
+        pqTimer(me, function () { mv(cxp, D, 460, "ease-in"); if (soundOn && AC) sfxReel(); }, t);
+        pqTimer(me, function () { prongs(false, 160); if (soundOn && AC) tone(520, AC.currentTime, 0.06, 0.06, "square"); }, t + 480);
+        pqTimer(me, function () { carry = hit; mv(cxp, 0, 460, "ease-out"); }, t + 700);
+        if (hit) {
+          pqTimer(me, function () { mv(chX, 0, 520); }, t + 1200);
+          pqTimer(me, drop, t + 1750);
+          pqTimer(me, pop, t + 2100);
+          pqTimer(me, done, t + 2700);
+        } else pqTimer(me, onMiss, t + 1180);
+      }
+      if (!me.diy) { pqTimer(me, function () { mv(px0, 0, 700); }, 400); pqTimer(me, function () { grab(true); }, 1180); return; }
+      /* 对方自己动手：爪子来回摆，点一下放下；没对准会“差一点”再来一次，几秒没动静小猫自己把爪子移到娃娃上方 */
+      var tries = 0, shut = false, off = function () {}, cur = null;
+      mach.addEventListener("pointerdown", function (e) { if (shut) return; e.preventDefault(); if (cur) cur.done(true); });
+      function attempt() {
+        shut = false; off = diyArm(mach); prongs(true, 160); hy = 0;
+        sw = claw.animate([{ transform: "translateX(" + lo + "px)" }, { transform: "translateX(" + hi + "px)" }], { duration: 1300 + (tries ? 300 : 0), direction: "alternate", iterations: Infinity, easing: "ease-in-out" });
+        cur = diyStep(me, cl + CW / 2, ct - 6, tries ? "差一点！再点一下" : "点一下，放下爪子！", function (byUser) {
+          shut = true; off();
+          var x = curX(); if (sw) { try { sw.cancel(); } catch (e) {} sw = null; }
+          cxp = x; claw.style.transform = "translateX(" + x + "px)";
+          if (!byUser) { mv(px0, 0, 520); pqTimer(me, function () { grab(true); }, 560); return; }
+          var hit = tries >= 2 || Math.abs(x - px0) <= (tries ? 40 : 24); tries++;
+          grab(hit, attempt);
+        }, { ms: 5000 });
+      }
+      pqTimer(me, attempt, 420);
+    });
+  }
+
+  function mailEnter(act, vw, vh) { /* 投信箱：信箱落到窗口位置，信飞进投信口，旗子竖起，窗口从投信口弹出来；「对方自己动手」时由对方把信拖进信箱（点一下信也行） */
+    pqAdd(act, function (me, done) {
+      var el = act.el, tx = act.cx, ty = act.cy, z0 = el.style.zIndex, side = act.idx % 2 ? 1 : -1, MW = 66, MH = 100;
+      var ml = Math.max(6, Math.min(vw - MW - 6, tx - MW / 2)), mt = Math.max(6, Math.min(vh - MH - 6, ty - MH / 2)), sx = ml + MW / 2, sy = mt + 24;
+      var ex = Math.max(34, Math.min(vw - 34, sx + side * 120)); if (Math.abs(ex - sx) < 70) ex = Math.max(34, Math.min(vw - 34, sx - side * 120));
+      var ey = Math.max(46, Math.min(vh - 50, sy + 90));
+      var box = mk("div", "mbx", '<i class="mflag"></i><div class="mbody"><i class="mslot"></i><i class="mlabel">信</i></div><i class="mpost"></i>');
+      box.style.cssText = "left:" + ml + "px;top:" + mt + "px;transform-origin:50% 100%";
+      var flag = box.querySelector(".mflag"), env = mk("div", "menv", '<i class="mfl"></i><b class="msl">♥</b>');
+      env.style.cssText = "left:" + (ex - 19) + "px;top:" + (ey - 13) + "px;opacity:0";
+      stage.appendChild(box); stage.appendChild(env); me.els.push(box, env);
+      try { box.animate([{ transform: "translateY(" + -(mt + MH + 20) + "px)" }, { transform: "none", offset: 0.72 }, { transform: "scale(1.07,.9)", offset: 0.86 }, { transform: "none" }], { duration: 480, easing: "ease-in" }); } catch (e) {}
+      pqTimer(me, function () { sfxThud(0.7, 0.6); shakeStage(2); pqBits(me, sx, mt + MH, 8, 70, ["#d9d4e0", "#b9b2c6"]); }, 340);
+      function pop() { /* 窗口从投信口里弹出来，信箱沉下去 */
+        var dx = sx - tx, dy = sy - ty;
+        pqReveal(act, z0, [{ opacity: 0, transform: "translate(" + dx + "px," + dy + "px) scale(.1)" }, { opacity: 1, transform: "translate(" + dx * 0.1 + "px," + (dy * 0.1 - 16) + "px) scale(1.08)", offset: 0.6 }, { opacity: 1, transform: "none" }], { duration: 540, easing: "cubic-bezier(.2,.9,.3,1)", fill: "backwards" });
+        pqBits(me, sx, sy, 12, 80, ["#ff9fb5", "#fffaf0", "#e0566b"]);
+        sfxMeow("happy", [0, 2, 4, 7, 9][act.idx % 5]); act.land();
+        pqTimer(me, function () { try { var sa = box.animate([{ transform: "none", opacity: 1 }, { transform: "translateY(30px) scale(.9)", opacity: 0 }], { duration: 360, easing: "ease-in", fill: "forwards" }); sa.onfinish = function () { rmEl(box); }; } catch (e) { rmEl(box); } }, 420);
+        pqTimer(me, done, 900);
+      }
+      function post() { /* 叮：信落进信箱，信箱抖一下，旗子竖起来 */
+        env.style.opacity = 0;
+        if (soundOn && AC) { var t = AC.currentTime; tone(1568, t, 0.12, 0.08, "triangle"); tone(2093, t + 0.09, 0.18, 0.07, "triangle"); }
+        try { box.animate([{ transform: "none" }, { transform: "translateX(3px) rotate(2deg)" }, { transform: "translateX(-3px) rotate(-2deg)" }, { transform: "none" }], { duration: 130, iterations: 2 }); } catch (e) {}
+        flag.style.transform = "rotate(0deg)";
+        try { flag.animate([{ transform: "rotate(80deg)" }, { transform: "rotate(-12deg)", offset: 0.7 }, { transform: "rotate(0deg)" }], { duration: 300, easing: "ease-out" }); } catch (e) {}
+        pqTimer(me, pop, 380);
+      }
+      function fly(fx, fy, ms) { /* 信从 (fx, fy)（相对它原来的位置）划一道弧，飞进投信口 */
+        var dx = sx - ex, dy = sy - ey, mx = (fx + dx) / 2, my = Math.min(fy, dy) - 50;
+        env.style.opacity = 1; env.style.transform = "translate(" + dx + "px," + dy + "px) scale(.5)";
+        try { env.animate([{ transform: "translate(" + fx + "px," + fy + "px) rotate(" + -side * 10 + "deg)" }, { transform: "translate(" + mx + "px," + my + "px) rotate(" + side * 14 + "deg) scale(.9)", offset: 0.5 }, { transform: "translate(" + dx + "px," + dy + "px) rotate(0deg) scale(.5)" }], { duration: ms, easing: "ease-in" }); } catch (e) {}
+        pqTimer(me, post, ms);
+      }
+      if (!me.diy) { pqTimer(me, function () { fly((side > 0 ? vw + 60 : -60) - ex, -ey * 0.6, 560); }, 520); return; }
+      pqTimer(me, function () {
+        env.style.opacity = 1; var off = diyArm(env), shut = false, drag = null, fx0 = 0, fy0 = 0, ctl;
+        try { env.animate([{ transform: "scale(.3)", opacity: 0 }, { transform: "none", opacity: 1 }], { duration: 260, easing: "ease-out" }); } catch (e) {}
+        function back(dx, dy) { env.style.transform = ""; try { env.animate([{ transform: "translate(" + dx + "px," + dy + "px)" }, { transform: "none" }], { duration: 260, easing: "ease-out" }); } catch (e) {} }
+        env.addEventListener("pointerdown", function (e) { if (shut) return; drag = { x: e.clientX, y: e.clientY, m: false }; try { env.setPointerCapture(e.pointerId); } catch (er) {} env.style.zIndex = 4998; ctl.poke(); e.preventDefault(); });
+        env.addEventListener("pointermove", function (e) {
+          if (!drag || shut) return;
+          var dx = e.clientX - drag.x, dy = e.clientY - drag.y; if (Math.abs(dx) + Math.abs(dy) > 6) drag.m = true;
+          if (drag.m) { env.style.transform = "translate(" + dx + "px," + dy + "px) rotate(" + dx * 0.06 + "deg)"; ctl.poke(); }
+        });
+        env.addEventListener("pointerup", function (e) {
+          if (!drag || shut) return; var d = drag, dx = e.clientX - d.x, dy = e.clientY - d.y; drag = null; env.style.zIndex = "";
+          if (!d.m) { ctl.done(true); return; } /* 点一下也算：信自己飞进去 */
+          var r = box.getBoundingClientRect();
+          if (e.clientX > r.left - 20 && e.clientX < r.right + 20 && e.clientY > r.top - 20 && e.clientY < r.bottom + 20) { fx0 = dx; fy0 = dy; ctl.done(true); }
+          else { back(dx, dy); ctl.poke(); } /* 没拖到信箱上，弹回去 */
+        });
+        env.addEventListener("pointercancel", function () { if (!drag) return; drag = null; env.style.zIndex = ""; back(0, 0); });
+        ctl = diyStep(me, sx, mt - 6, "把信拖进信箱（点一下信也行）", function (byUser) {
+          shut = true; off(); drag = null; env.style.zIndex = "";
+          if (byUser && (fx0 || fy0)) fly(fx0, fy0, 240); else fly(0, 0, 560);
+        });
+      }, 520);
+    });
+  }
+
   /* ---- 小猫打翻东西：小猫跳上桌子，把窗口一个个推下去，窗口带着重量摔在地上 ---- */
   var kn = null;
   /* 出场方式：carry 叼信 / knock 打翻 / angler 钓鱼 / snow 雪球；开了“出场方式随机”就每次播放随机换一种 */
   var entryMode = "carry", lastEntry = "";
   function pickEntry() {
     var m;
-    if (state.entryRand) { var pool = ["carry", "knock", "angler", "snow", "yarn", "paw", "balloon"].filter(function (x) { return x !== lastEntry; }); m = pool[Math.floor(Math.random() * pool.length)]; }
-    else m = state.knock ? "knock" : state.angler ? "angler" : state.snow ? "snow" : state.yarn ? "yarn" : state.paw ? "paw" : state.balloon ? "balloon" : "carry";
+    if (state.entryRand) { var pool = ["carry", "knock", "angler", "snow", "yarn", "paw", "balloon", "parcel", "calendar", "domino", "gacha", "claw", "mailbox"].filter(function (x) { return x !== lastEntry; }); m = pool[Math.floor(Math.random() * pool.length)]; }
+    else m = state.knock ? "knock" : state.angler ? "angler" : state.snow ? "snow" : state.yarn ? "yarn" : state.paw ? "paw" : state.balloon ? "balloon" : state.parcel ? "parcel" : state.calendar ? "calendar" : state.domino ? "domino" : state.gacha ? "gacha" : state.claw ? "claw" : state.mailbox ? "mailbox" : "carry";
     return (lastEntry = m);
   }
   /* 闷响：一记下坠的低频正弦 + 一小撮低通噪声；窗口越大越沉 */
@@ -1827,6 +2273,32 @@
       bub.textContent = "喵～"; bub.classList.add("show"); setTimeout(function () { bub.classList.remove("show"); }, 1600);
       setTimeout(function () { if (tok === runTok) box.setMood("open"); }, 5000);
     };
+  }
+
+  /* ---- 隐藏结局：看“再想想”被逼了几次，走不同的结局；解锁记录只存在本机 ---- */
+  var ENDKEY = "winter-endings-v1";
+  var ENDINGS = [
+    { t: "心有灵犀", d: "一点都没犹豫，连 {cat} 都愣了一下。" },
+    { t: "想了想，还是你", d: "只犹豫了一下下，不多不少，刚刚好。" },
+    { t: "小猫替你着急", d: "躲了好几下，{cat} 都看不下去了，推了你一把。" },
+    { t: "好吧，愿意", d: "「再想想」都躲到没地方躲了，只好承认。" }
+  ];
+  function endingsLoad() { try { var a = JSON.parse(localStorage.getItem(ENDKEY) || "[]"); return Array.isArray(a) ? a.filter(function (x) { return x >= 0 && x < ENDINGS.length; }) : []; } catch (e) { return []; } }
+  function endingShow(id) {
+    if (!state.endings || !ENDINGS[id]) return;
+    var tok = runTok, got = endingsLoad(), isNew = got.indexOf(id) < 0;
+    if (isNew) { got.push(id); try { localStorage.setItem(ENDKEY, JSON.stringify(got)); } catch (e) {} }
+    var nm = (state.cat && state.cat.name) || "小猫", E = ENDINGS[id];
+    var card = mk("div", "ending", "<small></small><b></b><p></p><div class=\"edots\"></div><em></em>");
+    card.querySelector("small").textContent = "隐藏结局 · " + got.length + "/" + ENDINGS.length + (isNew ? " · 新解锁" : "");
+    card.querySelector("b").textContent = E.t;
+    card.querySelector("p").textContent = E.d.replace("{cat}", nm);
+    var dots = card.querySelector(".edots");
+    ENDINGS.forEach(function (x, k) { var d = document.createElement("span"); d.className = (got.indexOf(k) >= 0 ? "on" : "") + (k === id ? " cur" : ""); dots.appendChild(d); });
+    card.querySelector("em").textContent = got.length < ENDINGS.length ? "还有别的结局，再玩一次试试" : "四个结局全部集齐 🎉";
+    function bye() { if (!card.parentNode) return; card.classList.add("out"); setTimeout(function () { rmEl(card); }, 520); }
+    card.addEventListener("pointerdown", bye);
+    setTimeout(function () { if (tok !== runTok) return; stage.appendChild(card); setTimeout(function () { if (tok === runTok) bye(); }, 12000); }, 2400);
   }
 
   /* ---- 拍立得合影 + 爱心蛋糕：点「愿意」之后、烟花之前 ---- */
@@ -2443,10 +2915,12 @@
       function accept() {
         if (accepted) return; accepted = true;
         body.textContent = state.accept || "我就知道你会答应 💗"; catMood("happy"); knockHalt();
+        var endId = giveUp ? 3 : tries === 0 ? 0 : tries <= 2 ? 1 : 2; /* 隐藏结局：按“再想想”的次数分 */
+        var after = function () { catSign(); endingShow(endId); };
         partyRun(function () { /* 合影、蛋糕都结束了，才放烟花 */
-          if (state.fireworks && !reduce) { fireworks(text, catSign); return; }
+          if (state.fireworks && !reduce) { fireworks(text, after); return; }
           var r = el.getBoundingClientRect(); fxBurst(r.left + r.width / 2, r.top + r.height / 2);
-          sfxFanfare(); beat(); setTimeout(catSign, 1800);
+          sfxFanfare(); beat(); setTimeout(after, 1800);
         });
       }
       function dodge(e) {
@@ -2737,12 +3211,13 @@
     puz = null;
     if (state.puzzle && fin) setupPuzzle(seq, n, vw);
     var knockN = fin ? n - 1 : n, catRun = catOn() && knockN > 0, mode = pickEntry(); entryMode = mode;
-    var knockOn = catRun && mode === "knock", fishOn = catRun && mode === "angler", snowOn = catRun && mode === "snow", yarnOn = catRun && mode === "yarn", pawOn = catRun && mode === "paw", balOn = catRun && mode === "balloon";
+    var knockOn = catRun && mode === "knock", fishOn = catRun && mode === "angler", snowOn = catRun && mode === "snow", yarnOn = catRun && mode === "yarn", pawOn = catRun && mode === "paw", balOn = catRun && mode === "balloon", parOn = catRun && mode === "parcel", calOn = catRun && mode === "calendar", domOn = catRun && mode === "domino", gacOn = catRun && mode === "gacha", clwOn = catRun && mode === "claw", mlbOn = catRun && mode === "mailbox";
     if (knockOn) knockStart(vw, vh, knockN, myTok);
     if (fishOn) fishStart(vw, vh, knockN, myTok);
     if (snowOn) snowStart(vw, vh, knockN, myTok);
     if (yarnOn) yarnStart(vw, vh, knockN, myTok);
-    if (pawOn || balOn) pqStart(knockN);
+    if (pawOn || balOn || parOn || calOn || domOn || gacOn || clwOn || mlbOn) pqStart(knockN);
+    if (state.diy && (parOn || calOn || gacOn || clwOn || mlbOn) && pq) { pq.diy = true; diyBtnShow(true); } /* 「对方自己动手」：只对拆快递 / 撕日历 / 扭蛋机生效 */
     seq.forEach(function (it, i) {
       var isFin = fin && i === n - 1;
       var delay = reduce ? 0 : 250 + i * state.gap + (isFin ? 350 : 0);
@@ -2776,7 +3251,7 @@
             } });
             return;
           }
-          if ((fishOn || snowOn || yarnOn || pawOn || balOn) && !isFin) { /* 钓鱼 / 雪球：窗口的入场动画由小猫的场景自己驱动 */
+          if ((fishOn || snowOn || yarnOn || pawOn || balOn || parOn || calOn || domOn || gacOn || clwOn || mlbOn) && !isFin) { /* 钓鱼 / 雪球：窗口的入场动画由小猫的场景自己驱动 */
             el.classList.add("entered");
             var act = {
               el: el, cx: el.offsetLeft + el.offsetWidth / 2, cy: el.offsetTop + el.offsetHeight / 2, w: el.offsetWidth, h: el.offsetHeight, idx: i,
@@ -2789,7 +3264,7 @@
               },
               quick: function () { act.show(); act.land(); }
             };
-            if (pawOn) pawEnter(act, vw, vh); else if (balOn) balloonEnter(act, vw, vh); else (fishOn ? fishAdd : snowOn ? snowAdd : yarnAdd)(act);
+            if (pawOn) pawEnter(act, vw, vh); else if (balOn) balloonEnter(act, vw, vh); else if (parOn) parcelEnter(act, vw, vh); else if (calOn) calendarEnter(act, vw, vh); else if (domOn) dominoEnter(act, vw, vh); else if (gacOn) gachaEnter(act, vw, vh); else if (clwOn) clawEnter(act, vw, vh); else if (mlbOn) mailEnter(act, vw, vh); else (fishOn ? fishAdd : snowOn ? snowAdd : yarnAdd)(act);
             return;
           }
           var go = function () { catDeliver(el.offsetLeft + el.offsetWidth / 2, el.offsetTop + el.offsetHeight / 2, isFin ? "box" : "letter", reveal, i); };
@@ -3087,7 +3562,7 @@
     fLayout.value = state.layout; fTo.value = state.to; fFrom.value = state.from; fEnv.checked = state.envelope; fFin.checked = state.finale; fFx.checked = state.fx; fGap.value = state.gap; fPets.checked = state.pets; gapVal.textContent = (state.gap / 1000).toFixed(2);
     draftSkin = state.skin; renderSkinChips();
     draftMedia = clone(state.media); fAutoVoice.checked = state.autoVoice; renderMediaList(); recLabel();
-    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fFish").checked = state.fish; document.getElementById("fRand").checked = state.randGame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; document.getElementById("fWish").checked = state.wish; document.getElementById("fWishStar").checked = state.wishStar; document.getElementById("fAngler").checked = state.angler; document.getElementById("fSnow").checked = state.snow; document.getElementById("fYarn").checked = state.yarn; document.getElementById("fPaw").checked = state.paw; document.getElementById("fBalloon").checked = state.balloon; document.getElementById("fEntryRand").checked = state.entryRand; syncEntryUi(); fCats.checked = state.cats; fFw.checked = state.fireworks; fAccept.value = state.accept || ""; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm(); draftSelfie = state.selfiePhoto ? clone(state.selfiePhoto) : null; renderSelfie();
+    fillCat(); document.getElementById("fWand").checked = state.wand; document.getElementById("fBox").checked = state.boxgame; document.getElementById("fFish").checked = state.fish; document.getElementById("fRand").checked = state.randGame; document.getElementById("fCatVoice").checked = state.catVoice; document.getElementById("fKnock").checked = state.knock; document.getElementById("fSelfie").checked = state.selfie; document.getElementById("fCake").checked = state.cake; document.getElementById("fWish").checked = state.wish; document.getElementById("fWishStar").checked = state.wishStar; document.getElementById("fAngler").checked = state.angler; document.getElementById("fSnow").checked = state.snow; document.getElementById("fYarn").checked = state.yarn; document.getElementById("fPaw").checked = state.paw; document.getElementById("fBalloon").checked = state.balloon; document.getElementById("fParcel").checked = state.parcel; document.getElementById("fCalendar").checked = state.calendar; document.getElementById("fDomino").checked = state.domino; document.getElementById("fGacha").checked = state.gacha; document.getElementById("fClaw").checked = state.claw; document.getElementById("fMailbox").checked = state.mailbox; document.getElementById("fEndings").checked = state.endings; document.getElementById("fEntryRand").checked = state.entryRand; document.getElementById("fDiy").checked = state.diy; syncEntryUi(); fCats.checked = state.cats; fFw.checked = state.fireworks; fAccept.value = state.accept || ""; fPuzzle.checked = state.puzzle; fPhoto.value = state.photoStyle; draftBgm = state.bgm ? clone(state.bgm) : null; renderBgm(); draftSelfie = state.selfiePhoto ? clone(state.selfiePhoto) : null; renderSelfie();
     modeNote.textContent = "这里的修改保存在你自己的浏览器里；点「分享」会把当前内容存到云端，生成发给 TA 的链接。";
   }
   function closeAll() {
@@ -3102,6 +3577,7 @@
   document.getElementById("btnEdit").addEventListener("click", openEdit);
   document.getElementById("btnMore").addEventListener("click", openMore);
   document.getElementById("btnReplay").addEventListener("click", function () { opened = false; unlockVoices(); play(); });
+  document.getElementById("btnDiyAll").addEventListener("click", diyAll);
   document.getElementById("btnClose").addEventListener("click", closeAll);
   document.getElementById("btnMoreClose").addEventListener("click", closeAll);
   scrim.addEventListener("click", closeAll);
@@ -3119,7 +3595,7 @@
       layout: fLayout.value, to: fTo.value.trim(), from: fFrom.value.trim(), envelope: fEnv.checked, finale: fFin.checked, fx: fFx.checked,
       msgs: lines.length ? lines : DEFAULTS.msgs.slice(),
       media: normMedia(draftMedia.filter(function (m) { return mediaSrc(m); })), autoVoice: fAutoVoice.checked,
-      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, accept: fAccept.value.trim().slice(0, 200), cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, fish: document.getElementById("fFish").checked, randGame: document.getElementById("fRand").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked, selfie: document.getElementById("fSelfie").checked, cake: document.getElementById("fCake").checked, wish: document.getElementById("fWish").checked, wishStar: document.getElementById("fWishStar").checked, angler: document.getElementById("fAngler").checked, snow: document.getElementById("fSnow").checked, yarn: document.getElementById("fYarn").checked, paw: document.getElementById("fPaw").checked, balloon: document.getElementById("fBalloon").checked, entryRand: document.getElementById("fEntryRand").checked,
+      photoStyle: fPhoto.value, puzzle: fPuzzle.checked, cats: fCats.checked, fireworks: fFw.checked, accept: fAccept.value.trim().slice(0, 200), cat: readCat(), wand: document.getElementById("fWand").checked, boxgame: document.getElementById("fBox").checked, fish: document.getElementById("fFish").checked, randGame: document.getElementById("fRand").checked, catVoice: document.getElementById("fCatVoice").checked, knock: document.getElementById("fKnock").checked, selfie: document.getElementById("fSelfie").checked, cake: document.getElementById("fCake").checked, wish: document.getElementById("fWish").checked, wishStar: document.getElementById("fWishStar").checked, angler: document.getElementById("fAngler").checked, snow: document.getElementById("fSnow").checked, yarn: document.getElementById("fYarn").checked, paw: document.getElementById("fPaw").checked, balloon: document.getElementById("fBalloon").checked, parcel: document.getElementById("fParcel").checked, calendar: document.getElementById("fCalendar").checked, domino: document.getElementById("fDomino").checked, gacha: document.getElementById("fGacha").checked, claw: document.getElementById("fClaw").checked, mailbox: document.getElementById("fMailbox").checked, endings: document.getElementById("fEndings").checked, entryRand: document.getElementById("fEntryRand").checked, diy: document.getElementById("fDiy").checked,
       selfiePhoto: draftSelfie && mediaSrc(draftSelfie) ? normPhoto(draftSelfie) : null,
       bgm: draftBgm && mediaSrc(draftBgm) ? normBgm(draftBgm) : null
     };
@@ -3147,7 +3623,7 @@
   function useTemplate(id) {
     var t = TEMPLATES[id];
     undoState = clone(state);
-    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, accept: state.accept, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, fish: state.fish, randGame: state.randGame, catVoice: state.catVoice, knock: state.knock, selfie: state.selfie, cake: state.cake, wish: state.wish, wishStar: state.wishStar, angler: state.angler, snow: state.snow, yarn: state.yarn, paw: state.paw, balloon: state.balloon, entryRand: state.entryRand, selfiePhoto: state.selfiePhoto ? clone(state.selfiePhoto) : null, bgm: state.bgm ? clone(state.bgm) : null };
+    var next = { skin: id, title: t.title, icon: t.icon, gap: state.gap, pets: state.pets, layout: state.layout, to: state.to, from: state.from, envelope: !!t.envelope, finale: !!t.finale, fx: state.fx, msgs: t.msgs.slice(), media: clone(state.media), autoVoice: state.autoVoice, photoStyle: state.photoStyle, puzzle: state.puzzle, cats: state.cats, fireworks: state.fireworks, accept: state.accept, cat: clone(state.cat), wand: state.wand, boxgame: state.boxgame, fish: state.fish, randGame: state.randGame, catVoice: state.catVoice, knock: state.knock, selfie: state.selfie, cake: state.cake, wish: state.wish, wishStar: state.wishStar, angler: state.angler, snow: state.snow, yarn: state.yarn, paw: state.paw, balloon: state.balloon, parcel: state.parcel, calendar: state.calendar, domino: state.domino, gacha: state.gacha, claw: state.claw, mailbox: state.mailbox, endings: state.endings, entryRand: state.entryRand, diy: state.diy, selfiePhoto: state.selfiePhoto ? clone(state.selfiePhoto) : null, bgm: state.bgm ? clone(state.bgm) : null };
     closeAll();
     persist(next).then(function () { play(); showToast("已套用「" + t.name + "」", true); });
   }
@@ -3327,7 +3803,7 @@
     }).catch(function () {});
   }
   /* 三种“小猫演出来的出场方式”三选一；开了“出场方式随机”时，这三项不再起作用 */
-  var ENTRY_IDS = ["fKnock", "fAngler", "fSnow", "fYarn", "fPaw", "fBalloon"];
+  var ENTRY_IDS = ["fKnock", "fAngler", "fSnow", "fYarn", "fPaw", "fBalloon", "fParcel", "fCalendar", "fDomino", "fGacha", "fClaw", "fMailbox"];
   function syncEntryUi() {
     var rnd = document.getElementById("fEntryRand").checked;
     ENTRY_IDS.forEach(function (id) { var c = document.getElementById(id); c.disabled = rnd; c.parentNode.style.opacity = rnd ? 0.45 : ""; });
